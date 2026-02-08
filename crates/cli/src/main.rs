@@ -1,6 +1,6 @@
 use anyhow::Result;
-use std::io::{self, BufRead, Write};
 use memtable::Memtable;
+use std::io::{self, BufRead, Write};
 use wal::{WalRecord, WalWriter};
 
 fn replay_wal_and_build(path: &str, mem: &mut Memtable) -> Result<u64> {
