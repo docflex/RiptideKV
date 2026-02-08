@@ -47,6 +47,18 @@ A learning project to build a simple Log-Structured Merge (LSM) key–value stor
     - SSTable layout: write data blocks where each block contains contiguous entries; build a small in-memory sparse index (key → block offset) when opening file.
     - Recovery: on startup list SSTables, read manifest (or derive from filenames), then apply WALs (newest to oldest) to rebuild memtable.
 
+#### 1. Writing to Memtable and then WAL
+<video src="https://github.com/user-attachments/assets/2796768c-c503-4059-92c8-f81df1ed1af5"/>
+
+#### 2. When Threshold Exceeds SST Added and WAL Flushed
+<video src="https://github.com/user-attachments/assets/91ea66fd-4644-4426-b2d2-781c73b62785"/>
+
+#### 3. Memtables to WAL post SST Creation
+<video src="https://github.com/user-attachments/assets/470c24d4-734b-49a5-ae42-b21b665e1c55"/>
+
+#### 4. Deletion Propogated Across via Writes
+<video src="https://github.com/user-attachments/assets/b377b71d-7327-49e6-b717-f8ea87ac6049"/>
+
 ### Phase 2 — Reads, bloom filters, and compaction basics (deliverables)
 
 - Deliverables:
