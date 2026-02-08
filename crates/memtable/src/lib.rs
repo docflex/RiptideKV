@@ -83,6 +83,10 @@ impl Memtable {
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
+
+    pub fn get_entry(&self, key: &[u8]) -> Option<&ValueEntry> {
+        self.map.get(key)
+    }
 }
 
 impl Default for Memtable {

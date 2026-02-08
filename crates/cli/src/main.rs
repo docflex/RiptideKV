@@ -1,22 +1,19 @@
 use anyhow::Result;
-use memtable::Memtable;
 use std::io::{self, BufRead, Write};
-use wal::{WalRecord, WalWriter};
 
 mod engine;
 
-use engine::replay_wal_and_build;
-
 fn main() -> Result<()> {
     let wal_path = "wal.log";
-    let mut mem = Memtable::new();
-    let mut seq: u64 = replay_wal_and_build(wal_path, &mut mem)?;
+    let sst_dir = "data/sst";
+    let flush_threshold = 1024; // 1 KB
 
-    println!("kv-cli started. Replayed WAL, current seq={}", seq);
+    let mut engine = engine::Engine::new(wal_path, sst_dir, flush_threshold, true)?;
+
+    println!("kv-cli started. current seq={}", engine.seq);
     println!("Commands: SET key value | GET key | DEL key | EXIT");
 
     let stdin = io::stdin();
-    let mut wal_writer = WalWriter::create(wal_path, true)?;
 
     for line in stdin.lock().lines() {
         let line = line?;
@@ -25,15 +22,7 @@ fn main() -> Result<()> {
             match cmd.to_uppercase().as_str() {
                 "SET" => {
                     if let (Some(k), Some(v)) = (parts.next(), parts.next()) {
-                        seq += 1;
-                        let key = k.as_bytes().to_vec();
-                        let val = v.as_bytes().to_vec();
-                        wal_writer.append(&WalRecord::Put {
-                            seq,
-                            key: key.clone(),
-                            value: val.clone(),
-                        })?;
-                        mem.put(key, val, seq);
+                        engine.set(k.as_bytes().to_vec(), v.as_bytes().to_vec())?;
                         println!("OK");
                     } else {
                         println!("ERR usage: SET key value");
@@ -41,10 +30,9 @@ fn main() -> Result<()> {
                 }
                 "GET" => {
                     if let Some(k) = parts.next() {
-                        if let Some((_s, v)) = mem.get(k.as_bytes()) {
-                            println!("{}", String::from_utf8_lossy(&v));
-                        } else {
-                            println!("(nil)");
+                        match engine.get(k.as_bytes()) {
+                            Some((_s, v)) => println!("{}", String::from_utf8_lossy(&v)),
+                            None => println!("(nil)"),
                         }
                     } else {
                         println!("ERR usage: GET key");
@@ -52,13 +40,7 @@ fn main() -> Result<()> {
                 }
                 "DEL" => {
                     if let Some(k) = parts.next() {
-                        seq += 1;
-                        let key = k.as_bytes().to_vec();
-                        wal_writer.append(&WalRecord::Del {
-                            seq,
-                            key: key.clone(),
-                        })?;
-                        mem.delete(key, seq);
+                        engine.del(k.as_bytes().to_vec())?;
                         println!("OK");
                     } else {
                         println!("ERR usage: DEL key");

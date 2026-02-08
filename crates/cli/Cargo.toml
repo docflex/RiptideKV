@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 memtable = { path = "../memtable" }
+sstable = { path = "../sstable" }
 wal = { path = "../wal" }
 anyhow = "1.0"
 

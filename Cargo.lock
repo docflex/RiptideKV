@@ -124,6 +124,7 @@ dependencies = [
  "anyhow",
  "criterion",
  "memtable",
+ "sstable",
  "tempfile",
  "wal",
 ]
@@ -504,6 +505,16 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "sstable"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "byteorder",
+ "memtable",
+ "tempfile",
 ]
 
 [[package]]

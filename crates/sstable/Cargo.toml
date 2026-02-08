@@ -1,0 +1,12 @@
+[package]
+name = "sstable"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+byteorder = "1.4"
+anyhow = "1.0"
+memtable = { path = "../memtable" }
+
+[dev-dependencies]
+tempfile = "3"
