@@ -162,7 +162,3 @@ impl<'a> MergeIterator<'a> {
         Ok(result)
     }
 }
-
-// #[cfg(test)]
-// #[path = "merge_tests.rs"]
-// mod tests;

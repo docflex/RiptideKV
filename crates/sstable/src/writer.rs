@@ -188,7 +188,3 @@ impl SSTableWriter {
         Ok(())
     }
 }
-
-// #[cfg(test)]
-// #[path = "writer_tests.rs"]
-// mod tests;

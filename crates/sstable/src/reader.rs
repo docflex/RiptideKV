@@ -249,7 +249,3 @@ impl SSTableReader {
         self.index.keys().map(|k| k.as_slice())
     }
 }
-
-// #[cfg(test)]
-// #[path ="reader_tests.rs"]
-// mod tests;
