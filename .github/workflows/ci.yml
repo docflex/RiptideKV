@@ -7,6 +7,18 @@ on:
       - 'v*'
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Create a GitHub Release with Binaries - Pick Bump Type (none = skip release)'
+        required: false
+        type: choice
+        default: none
+        options:
+          - none
+          - patch
+          - minor
+          - major
 
 # Cancel in-progress runs for the same branch/PR
 concurrency:
@@ -98,30 +110,82 @@ jobs:
             ${{ matrix.artifact }}.tar.gz
             ${{ matrix.artifact }}.zip
           if-no-files-found: ignore
-      
+  
   #-----------------------------------------------------------
-  # 3. GitHub Release (runs only on version tags: v1.0.0 etc)
-  #    Creates a GitHub Release with Downloadable binaries.
+  # 3. Compute & push version tag (manual dispatch only)
+  # Reads the Latest vX.Y.Z tag, bumps it, and pushes.
   #-----------------------------------------------------------
-  release:
-    name: Release
-    if: startsWith(github.ref, 'refs/tags/v')
+  tag:
+    name: Auto-tag (${{ inputs.version_bump }})
+    if: github.event_name == 'workflow_dispatch' && inputs.version_bump != 'none'
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      new_tag: ${{ steps.bump.outputs.new_tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - name: Compute next version
+        id: bump
+        run: |
+          LATEST=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)
+          if [ -z "$LATEST" ]; then
+            LATEST="v0.0.0"
+          fi
+
+          VERSION="${LATEST#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+          case "${{ inputs.version_bump }}" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.bump.outputs.new_tag }}" -m "${{ steps.bump.outputs.new_tag }}"
+          git push origin "${{ steps.bump.outputs.new_tag }}"
+
+  #-----------------------------------------------------------
+  # 4. GitHub Release (runs only on version tags: v1.0.0 etc or auto-tag)
+  #    Creates a GitHub Release with Downloadable binaries.
+  #-----------------------------------------------------------
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v') || needs.tag.outputs.new_tag != ''
+    needs: [build, tag]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Determine Tag Name
+        id: tag_name
+        run: |
+          if [ -n "${{ needs.tag.outputs.new_tag }}" ]; then
+            echo "tag_name=${{ needs.tag.outputs.new_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag_name=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
-      
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+
+      - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.tag_name.outputs.tag_name }}
           generate_release_notes: true
           files: |
             artifacts/**/*.tar.gz
             artifacts/**/*.zip
+
