@@ -58,7 +58,10 @@ mod merge;
 mod reader;
 mod writer;
 
-pub use format::{FOOTER_BYTES, FOOTER_BYTES_V2, FOOTER_BYTES_V3, SSTABLE_MAGIC, SSTABLE_MAGIC_V2, SSTABLE_MAGIC_V3};
+pub use format::{
+    FOOTER_BYTES, FOOTER_BYTES_V2, FOOTER_BYTES_V3, SSTABLE_MAGIC, SSTABLE_MAGIC_V2,
+    SSTABLE_MAGIC_V3,
+};
 pub use merge::MergeIterator;
 pub use reader::SSTableReader;
 pub use writer::SSTableWriter;

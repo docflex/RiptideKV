@@ -105,7 +105,11 @@ impl WalWriter {
             .append(true)
             .read(true)
             .open(path)?;
-        Ok(Self { file, sync, buf: Vec::with_capacity(256) })
+        Ok(Self {
+            file,
+            sync,
+            buf: Vec::with_capacity(256),
+        })
     }
 
     /// Serializes `record` and appends it to the WAL file.
@@ -286,7 +290,7 @@ impl<R: Read> WalReader<R> {
             let mut key = vec![0u8; key_len];
             br.read_exact(&mut key)?;
 
-                        match op {
+            match op {
                 0 => {
                     let val_len = br.read_u32::<LittleEndian>()? as usize;
                     if val_len > body_len {

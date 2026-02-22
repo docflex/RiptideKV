@@ -133,12 +133,12 @@ impl Memtable {
         self.map.insert(key, ValueEntry { seq, value: None });
     }
 
-    /// Returns a borrowed reference to the value for the given key if it exists 
+    /// Returns a borrowed reference to the value for the given key if it exists
     /// and is **not** a tombstone.
-    /// 
+    ///
     /// Returns `Some((seq, value_bytes))` for live entries, `None` for missing
     /// keys or tombstones. Callers should `.clone()` only when ownership is needed.
-    /// 
+    ///
     /// **Prefer [`get_entry`](Memtable::get_entry)** when you need to distinguish
     /// between "key not found" and "key was deleted" (tombstone).
     pub fn get(&self, key: &[u8]) -> Option<(u64, &[u8])> {
@@ -199,7 +199,6 @@ impl Memtable {
         self.map.clear();
         self.approx_size = 0;
     }
-
 }
 
 impl Default for Memtable {

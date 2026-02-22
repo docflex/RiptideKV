@@ -1,5 +1,7 @@
 [workspace]
 members = [
+    "crates/bloom",
+    "crates/engine",
     "crates/cli",
     "crates/wal",
     "crates/memtable",

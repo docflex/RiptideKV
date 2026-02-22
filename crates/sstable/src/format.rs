@@ -33,7 +33,7 @@ pub const SSTABLE_MAGIC_V1: u32 = 0x5353_5431;
 pub const SSTABLE_MAGIC_V2: u32 = 0x5353_5432;
 
 /// Magic number identifying SSTable v3 files (ASCII "SST3").
-/// 
+///
 /// v3 adds per-record CRC32 checksums in the data section and stores
 /// `max_seq` in the footer for O(1) sequence-number recovery.
 pub const SSTABLE_MAGIC_V3: u32 = 0x5353_5433;
@@ -64,11 +64,7 @@ pub fn footer_pos(filesize: u64) -> u64 {
 
 /// Writes a v2 SSTable footer (`bloom_offset` + `index_offset` + `magic`) to `w`
 #[allow(dead_code)]
-pub fn write_footer_v2<W: Write>(
-    w: &mut W,
-    bloom_offset: u64,
-    index_offset: u64,
-) -> IoResult<()> {
+pub fn write_footer_v2<W: Write>(w: &mut W, bloom_offset: u64, index_offset: u64) -> IoResult<()> {
     w.write_u64::<LittleEndian>(bloom_offset)?;
     w.write_u64::<LittleEndian>(index_offset)?;
     w.write_u32::<LittleEndian>(SSTABLE_MAGIC_V2)?;
@@ -103,9 +99,7 @@ pub fn write_footer<W: Write>(w: &mut W, index_offset: u64) -> IoResult<()> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Footer {
     /// v1: no bloom filter.
-    V1 {
-        index_offset: u64,
-    },
+    V1 { index_offset: u64 },
     /// v2: includes bloom filter offset.
     V2 {
         bloom_offset: u64,
@@ -179,7 +173,6 @@ impl Footer {
         }
     }
 }
-
 
 /// Reads the SSTable footer from `r`, auto-detecting v1 or v2.
 /// Strategy: read the last 4 bytes to determine the magic, then seek back

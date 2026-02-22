@@ -131,28 +131,21 @@ fn sst_sort_order_is_correct_across_many_flushes() -> Result<()> {
     let sst_dir = dir.path().join("sst");
 
     // Use threshold=1 so every set triggers a flush
-    let mut engine = Engine::new(
-        dir.path().join("wal.log"),
-        &sst_dir,
-        1,
-        false,
-    )?;
+    let mut engine = Engine::new(dir.path().join("wal.log"), &sst_dir, 1, false)?;
 
     // Write 15 keys - produces seq 1..15, so filenames span single and
     // double digits. Without zero-padding this breaks.
     for i in 0..15u64 {
-        engine.set(format!("k{:02}", i).into_bytes(), format!("v{}", i).into_bytes())?;
+        engine.set(
+            format!("k{:02}", i).into_bytes(),
+            format!("v{}", i).into_bytes(),
+        )?;
         thread::sleep(Duration::from_millis(2));
     }
 
     // Drop and reopen - recovery must load SSTables in correct order
     drop(engine);
-    let engine = Engine::new(
-        dir.path().join("wal.log"),
-        &sst_dir,
-        1024 * 1024,
-        false,
-    )?;
+    let engine = Engine::new(dir.path().join("wal.log"), &sst_dir, 1024 * 1024, false)?;
 
     // All keys must be readable with correct values
     for i in 0..15u64 {
@@ -210,14 +203,12 @@ fn recovery_cleans_up_tmp_files() -> Result<()> {
     assert!(tmp_file.exists());
 
     // Opening the engine should clean it up
-    let _engine = Engine::new(
-        dir.path().join("wal.log"),
-        &sst_dir,
-        1024 * 1024,
-        false,
-    )?;
+    let _engine = Engine::new(dir.path().join("wal.log"), &sst_dir, 1024 * 1024, false)?;
 
-    assert!(!tmp_file.exists(), ".sst.tmp should be cleaned up on recovery");
+    assert!(
+        !tmp_file.exists(),
+        ".sst.tmp should be cleaned up on recovery"
+    );
     Ok(())
 }
 

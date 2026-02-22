@@ -360,7 +360,12 @@ fn binary_key_and_value() {
 
     let recs = replay_all(&path).unwrap();
     assert_eq!(recs.len(), 1);
-    if let WalRecord::Put { seq, key: k, value: v } = &recs[0] {
+    if let WalRecord::Put {
+        seq,
+        key: k,
+        value: v,
+    } = &recs[0]
+    {
         assert_eq!(*seq, 1);
         assert_eq!(k, &key);
         assert_eq!(v, &val);
@@ -429,7 +434,10 @@ fn interleaved_puts_and_dels() {
     let recs = replay_all(&path).unwrap();
     assert_eq!(recs.len(), 1000);
 
-    let del_count = recs.iter().filter(|r| matches!(r, WalRecord::Del { .. })).count();
+    let del_count = recs
+        .iter()
+        .filter(|r| matches!(r, WalRecord::Del { .. }))
+        .count();
     let put_count = recs.len() - del_count;
     // 0,3,6,...,999 -> ceil(1000/3) = 334
     assert_eq!(del_count, 334);

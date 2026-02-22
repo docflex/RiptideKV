@@ -92,7 +92,11 @@ impl SSTableReader {
         while f.stream_position()? < (filesize - footer_size) {
             let key_len = f.read_u32::<LittleEndian>()? as usize;
             if key_len > MAX_KEY_BYTES {
-                bail!("corrupt index: key_len {} exceeds maximum {}", key_len, MAX_KEY_BYTES);
+                bail!(
+                    "corrupt index: key_len {} exceeds maximum {}",
+                    key_len,
+                    MAX_KEY_BYTES
+                );
             }
             let mut key = vec![0u8; key_len];
             f.read_exact(&mut key)?;
@@ -143,7 +147,10 @@ impl SSTableReader {
 
         let has_crc = self.footer.has_checksums();
 
-        let mut f = self.file.lock().map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
+        let mut f = self
+            .file
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
         f.seek(SeekFrom::Start(offset))?;
 
         // v3 record layout: [crc32: u32][key_len: u32][key][seq: u64][present: u8][val_len: u32][val]
@@ -159,7 +166,11 @@ impl SSTableReader {
         // Read the record body (everything after the CRC prefix).
         let key_len = f.read_u32::<LittleEndian>()? as usize;
         if key_len > MAX_KEY_BYTES {
-            bail!("corrupt data: key_len {} exceeds maximum {}", key_len, MAX_KEY_BYTES);
+            bail!(
+                "corrupt data: key_len {} exceeds maximum {}",
+                key_len,
+                MAX_KEY_BYTES
+            );
         }
         let mut key_buf = vec![0u8; key_len];
         f.read_exact(&mut key_buf)?;
@@ -174,7 +185,11 @@ impl SSTableReader {
         let (value, val_bytes) = if present == 1 {
             let val_len = f.read_u32::<LittleEndian>()? as usize;
             if val_len > MAX_VALUE_BYTES {
-                bail!("corrupt data: val_len {} exceeds maximum {}", val_len, MAX_VALUE_BYTES);
+                bail!(
+                    "corrupt data: val_len {} exceeds maximum {}",
+                    val_len,
+                    MAX_VALUE_BYTES
+                );
             }
             let mut val = vec![0u8; val_len];
             f.read_exact(&mut val)?;

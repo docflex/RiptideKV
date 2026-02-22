@@ -133,7 +133,10 @@ fn read_path_prefers_l0_over_l1() -> Result<()> {
         engine.set(format!("pad{:04}", i).into_bytes(), b"x".to_vec())?;
     }
 
-    assert!(engine.l0_sstable_count() > 1, "need multiple L0 SSTables for compact");
+    assert!(
+        engine.l0_sstable_count() > 1,
+        "need multiple L0 SSTables for compact"
+    );
     engine.compact()?;
     assert_eq!(engine.l1_sstable_count(), 1);
     assert_eq!(engine.l0_sstable_count(), 0);

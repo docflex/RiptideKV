@@ -45,7 +45,6 @@
 ///! > EXIT
 ///! bye
 ///! ```
-
 use anyhow::Result;
 use engine::Engine;
 use std::io::{self, BufRead, Write};
@@ -153,14 +152,16 @@ fn main() -> Result<()> {
                 "COMPACT" => match engine.compact() {
                     Ok(()) => println!(
                         "OK (L0={}, L1={})",
-                        engine.l0_sstable_count(),engine.l1_sstable_count()
+                        engine.l0_sstable_count(),
+                        engine.l1_sstable_count()
                     ),
                     Err(e) => println!("ERR compact failed: {}", e),
                 },
                 "FLUSH" => match engine.force_flush() {
                     Ok(()) => println!(
                         "OK (L0={}, L1={})",
-                        engine.l0_sstable_count(),engine.l1_sstable_count()
+                        engine.l0_sstable_count(),
+                        engine.l1_sstable_count()
                     ),
                     Err(e) => println!("ERR flush failed: {}", e),
                 },

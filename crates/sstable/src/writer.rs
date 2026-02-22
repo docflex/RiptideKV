@@ -53,7 +53,7 @@ impl SSTableWriter {
         Self::write_internal(path, mem.len(), iter)
     }
 
-        /// Writes an SSTable from an iterator of `(key, ValueEntry)` pairs.
+    /// Writes an SSTable from an iterator of `(key, ValueEntry)` pairs.
     ///
     /// This is the **streaming compaction** entry point. Unlike
     /// [`write_from_memtable`](SSTableWriter::write_from_memtable), this method
@@ -109,7 +109,7 @@ impl SSTableWriter {
         // Reusable buffer for computing per-record CRC32 checksums.
         let mut record_buf: Vec<u8> = Vec::with_capacity(256);
 
-                // Write DATA section
+        // Write DATA section
         for (key, entry) in iter {
             max_seq = max_seq.max(entry.seq);
 
@@ -153,7 +153,7 @@ impl SSTableWriter {
             anyhow::bail!("refusing to write an empty SSTable (no entries)");
         }
 
-                // Write BLOOM section
+        // Write BLOOM section
         let bloom_offset = file.stream_position()?;
         bloom.write_to(&mut file)?;
 

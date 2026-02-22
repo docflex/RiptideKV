@@ -26,7 +26,6 @@
 /// A text format was chosen over binary for debuggability — operators can
 /// inspect the manifest with any text editor. The file is small (one line per
 /// SSTable) so parsing overhead is negligible.
-
 use anyhow::{bail, Context, Result};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
@@ -73,9 +72,8 @@ impl Manifest {
             let mut entries = Vec::new();
 
             for (line_num, line) in reader.lines().enumerate() {
-                let line = line.with_context(|| {
-                    format!("failed to read manifest line {}", line_num + 1)
-                })?;
+                let line =
+                    line.with_context(|| format!("failed to read manifest line {}", line_num + 1))?;
                 let trimmed = line.trim();
 
                 // Skip empty lines and comments.
@@ -151,9 +149,7 @@ impl Manifest {
                 .write(true)
                 .truncate(true)
                 .open(&self.path)
-                .with_context(|| {
-                    format!("failed to open manifest at {}", self.path.display())
-                })?;
+                .with_context(|| format!("failed to open manifest at {}", self.path.display()))?;
 
             Self::write_manifest_contents(&mut f, &self.entries)?;
             f.flush()?;
@@ -223,9 +219,6 @@ impl Manifest {
     /// Replaces all L0 and L1 entries with a single L1 entry (used after compaction).
     pub fn replace_all_with_l1(&mut self, filename: String) {
         self.entries.clear();
-        self.entries.push(SstMeta {
-            filename,
-            level: 1,
-        });
+        self.entries.push(SstMeta { filename, level: 1 });
     }
 }

@@ -1,8 +1,8 @@
-use crate::*;
 use crate::SSTableWriter;
+use crate::*;
+use anyhow::Result;
 use memtable::Memtable;
 use tempfile::tempdir;
-use anyhow::Result;
 
 fn make_sample_memtable() -> Memtable {
     let mut m = Memtable::new();
@@ -213,7 +213,10 @@ fn keys_are_sorted() -> Result<()> {
 
     let reader = SSTableReader::open(&path)?;
     let keys: Vec<&[u8]> = reader.keys().collect();
-    assert_eq!(keys, vec![b"a".as_slice(), b"m".as_slice(), b"z".as_slice()]);
+    assert_eq!(
+        keys,
+        vec![b"a".as_slice(), b"m".as_slice(), b"z".as_slice()]
+    );
 
     Ok(())
 }

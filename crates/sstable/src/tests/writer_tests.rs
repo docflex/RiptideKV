@@ -1,10 +1,10 @@
-use crate::*;
 use crate::format::{read_footer_versioned, Footer, SSTABLE_MAGIC_V3};
+use crate::*;
+use anyhow::Result;
 use memtable::Memtable;
 use std::io::Read;
-use tempfile::tempdir;
-use anyhow::Result;
 use std::io::Seek;
+use tempfile::tempdir;
 
 fn make_sample_memtable() -> Memtable {
     let mut m = Memtable::new();
@@ -28,7 +28,10 @@ fn write_empty_memtable_is_rejected() {
         "error message should mention 'empty'"
     );
     // No file should have been created
-    assert!(!path.exists(), "no .sst file should be created for empty memtable");
+    assert!(
+        !path.exists(),
+        "no .sst file should be created for empty memtable"
+    );
 }
 
 #[test]
@@ -52,7 +55,11 @@ fn write_and_inspect_sstable_v3_footer() -> Result<()> {
     assert_eq!(footer.magic(), SSTABLE_MAGIC_V3);
 
     match &footer {
-        Footer::V3 { max_seq, bloom_offset, index_offset } => {
+        Footer::V3 {
+            max_seq,
+            bloom_offset,
+            index_offset,
+        } => {
             // max_seq should be 4 (highest seq in our sample memtable)
             assert_eq!(*max_seq, 4);
             // bloom_offset must be before index_offset

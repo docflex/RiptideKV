@@ -42,6 +42,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
 
 [[package]]
+name = "bloom"
+version = "0.1.0"
+
+[[package]]
 name = "bumpalo"
 version = "3.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -124,6 +128,7 @@ dependencies = [
  "anyhow",
  "byteorder",
  "criterion",
+ "engine",
  "memtable",
  "sstable",
  "tempfile",
@@ -211,6 +216,17 @@ name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
+
+[[package]]
+name = "engine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "memtable",
+ "sstable",
+ "tempfile",
+ "wal",
+]
 
 [[package]]
 name = "errno"
@@ -513,7 +529,9 @@ name = "sstable"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bloom",
  "byteorder",
+ "crc32fast",
  "memtable",
  "tempfile",
 ]

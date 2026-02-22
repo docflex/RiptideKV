@@ -1,6 +1,6 @@
 use crate::*;
-use tempfile::tempdir;
 use std::fs;
+use tempfile::tempdir;
 
 use manifest::MANIFEST_FILENAME;
 

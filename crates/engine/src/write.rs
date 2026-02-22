@@ -4,7 +4,6 @@
 /// WAL for durability, then applied to the in-memory Memtable. When the
 /// Memtable exceeds the configured flush threshold, it is persisted to a new
 /// SSTable on disk.
-
 use anyhow::Result;
 use std::fs::OpenOptions;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -19,10 +18,7 @@ impl Engine {
     /// Memtable. If the Memtable exceeds the flush threshold, it is
     /// automatically flushed to a new SSTable.
     pub fn set(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
-        anyhow::ensure!(
-            !key.is_empty(),
-            "key must not be empty"
-        );
+        anyhow::ensure!(!key.is_empty(), "key must not be empty");
         anyhow::ensure!(
             key.len() <= MAX_KEY_SIZE,
             "key too large: {} bytes (max {})",
@@ -36,7 +32,9 @@ impl Engine {
             MAX_VALUE_SIZE
         );
 
-        self.seq = self.seq.checked_add(1)
+        self.seq = self
+            .seq
+            .checked_add(1)
             .ok_or_else(|| anyhow::anyhow!("sequence number overflow (u64::MAX reached)"))?;
         let seq = self.seq;
 
@@ -58,15 +56,12 @@ impl Engine {
         Ok(())
     }
 
-        /// Deletes a key by writing a tombstone (the `DEL` command).
+    /// Deletes a key by writing a tombstone (the `DEL` command).
     ///
     /// A tombstone record is appended to the WAL and inserted into the
     /// Memtable. The tombstone shadows any older value in SSTables.
     pub fn del(&mut self, key: Vec<u8>) -> Result<()> {
-        anyhow::ensure!(
-            !key.is_empty(),
-            "key must not be empty"
-        );
+        anyhow::ensure!(!key.is_empty(), "key must not be empty");
         anyhow::ensure!(
             key.len() <= MAX_KEY_SIZE,
             "key too large: {} bytes (max {})",
@@ -74,7 +69,9 @@ impl Engine {
             MAX_KEY_SIZE
         );
 
-        self.seq = self.seq.checked_add(1)
+        self.seq = self
+            .seq
+            .checked_add(1)
             .ok_or_else(|| anyhow::anyhow!("sequence number overflow (u64::MAX reached)"))?;
         let seq = self.seq;
 
@@ -157,9 +154,7 @@ impl Engine {
         // merge all L0 + L1 SSTables into a single L1 SSTable. This keeps
         // read amplification bounded without requiring the caller to manually
         // invoke compact().
-        if self.l0_compaction_trigger > 0
-            && self.l0_sstables.len() >= self.l0_compaction_trigger
-        {
+        if self.l0_compaction_trigger > 0 && self.l0_sstables.len() >= self.l0_compaction_trigger {
             self.compact()?;
         }
 

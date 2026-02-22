@@ -4,7 +4,6 @@
 /// SSTables. Tombstone GC drops dead keys when no older SSTables remain.
 /// The result is written atomically (temp file + rename), old files are
 /// deleted, and the manifest is updated.
-
 use anyhow::Result;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -95,11 +94,8 @@ impl Engine {
             }
         });
 
-        let write_result = SSTableWriter::write_from_iterator(
-            &sst_path,
-            estimated_count,
-            streaming_iter,
-        );
+        let write_result =
+            SSTableWriter::write_from_iterator(&sst_path, estimated_count, streaming_iter);
 
         // Check for merge errors first, then write errors.
         if let Some(e) = merge_error {

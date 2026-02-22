@@ -58,7 +58,6 @@
 ///! is only truncated **after** a successful flush + manifest update. SSTables
 ///! are written atomically via temp file + rename. The manifest uses the same
 ///! atomic write pattern. See [`ARCHITECTURE.md`] for the full crash matrix.
-
 mod compaction;
 mod manifest;
 mod read;

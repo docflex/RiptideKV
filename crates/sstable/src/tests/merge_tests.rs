@@ -1,8 +1,8 @@
-use crate::*;
 use crate::SSTableWriter;
+use crate::*;
+use anyhow::Result;
 use memtable::Memtable;
 use tempfile::tempdir;
-use anyhow::Result;
 
 /// Helper: write a memtable to an SSTable and open a reader.
 fn write_and_open(
@@ -226,18 +226,10 @@ fn merge_overlapping_keys_highest_seq_wins() -> Result<()> {
     let dir = tempdir()?;
 
     // Older SSTable
-    let r1 = write_and_open(
-        dir.path(),
-        "old.sst",
-        &[(b"key", Some(b"old_value"), 1)],
-    )?;
+    let r1 = write_and_open(dir.path(), "old.sst", &[(b"key", Some(b"old_value"), 1)])?;
 
     // Newer SSTable
-    let r2 = write_and_open(
-        dir.path(),
-        "new.sst",
-        &[(b"key", Some(b"new_value"), 5)],
-    )?;
+    let r2 = write_and_open(dir.path(), "new.sst", &[(b"key", Some(b"new_value"), 5)])?;
 
     let readers = vec![r1, r2];
     let mut iter = MergeIterator::new(&readers);
@@ -254,11 +246,7 @@ fn merge_overlapping_keys_highest_seq_wins() -> Result<()> {
 #[test]
 fn merge_tombstone_wins_over_older_value() -> Result<()> {
     let dir = tempdir()?;
-    let r1 = write_and_open(
-        dir.path(),
-        "old.sst",
-        &[(b"key", Some(b"alive"), 1)],
-    )?;
+    let r1 = write_and_open(dir.path(), "old.sst", &[(b"key", Some(b"alive"), 1)])?;
     let r2 = write_and_open(
         dir.path(),
         "new.sst",

@@ -6,7 +6,6 @@
 ///
 /// Range scans merge data from all sources, deduplicate by highest sequence
 /// number, and filter out tombstones before returning sorted results.
-
 use anyhow::Result;
 use memtable::ValueEntry;
 use std::collections::BTreeMap;
@@ -89,12 +88,10 @@ impl Engine {
         let mut merged: BTreeMap<Vec<u8>, ValueEntry> = BTreeMap::new();
 
         // Helper: insert only if this entry has a higher seq than any existing one.
-        let mut merge_entry = |key: Vec<u8>, entry: ValueEntry| {
-            match merged.get(&key) {
-                Some(existing) if existing.seq >= entry.seq => {}
-                _ => {
-                    merged.insert(key, entry);
-                }
+        let mut merge_entry = |key: Vec<u8>, entry: ValueEntry| match merged.get(&key) {
+            Some(existing) if existing.seq >= entry.seq => {}
+            _ => {
+                merged.insert(key, entry);
             }
         };
 

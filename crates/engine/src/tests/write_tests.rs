@@ -122,7 +122,11 @@ fn force_flush_empty_memtable_is_noop() -> Result<()> {
 
     let count_before = engine.sstable_count();
     engine.force_flush()?;
-    assert_eq!(engine.sstable_count(), count_before, "empty flush should be noop");
+    assert_eq!(
+        engine.sstable_count(),
+        count_before,
+        "empty flush should be noop"
+    );
     Ok(())
 }
 
@@ -198,7 +202,9 @@ fn set_accepts_max_key_size() -> Result<()> {
 
     let max_key = vec![b'k'; MAX_KEY_SIZE];
     engine.set(max_key.clone(), b"v".to_vec())?;
-    let (_, val) = engine.get(&max_key)?.expect("max-size key should be readable");
+    let (_, val) = engine
+        .get(&max_key)?
+        .expect("max-size key should be readable");
     assert_eq!(val, b"v");
     Ok(())
 }
