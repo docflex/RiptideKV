@@ -75,7 +75,7 @@ impl Engine {
         let mut merge_error: Option<anyhow::Error> = None;
         let streaming_iter = std::iter::from_fn(|| {
             loop {
-                match merge.next() {
+                match merge.next_entry() {
                     Ok(Some((key, entry))) => {
                         // Drop tombstones unless the memtable still references
                         // this key (the memtable is not part of compaction, so

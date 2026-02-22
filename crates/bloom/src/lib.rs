@@ -1,27 +1,27 @@
-///! # Bloom Filter
-///!
-///! A space-efficient probabilistic data structure for set membership testing.
-///!
-///! A bloom filter can tell you with certainty that a key is **not** in the set
-///! (no false negatives), but may occasionally report that a key **is** in the
-///! set when it isn't (false positives). The false positive rate depends on the
-///! number of bits and hash functions used.
-///!
-///! ## Usage in RiptideKV
-///!
-///! Each SSTable embeds a bloom filter built from its keys. During point lookups
-///! the engine checks the bloom filter first -- if it says "not present", the
-///! SSTable is skipped entirely, avoiding expensive index lookups and disk I/O.
-///!
-///! ## Example
-///!
-///! ```rust,no_run
-///! use bloom::BloomFilter;
-///!
-///! let mut bf = BloomFilter::new(1000, 0.01);
-///! bf.insert(b"hello");
-///! assert!(bf.may_contain(b"hello"));
-///! ```
+//! # Bloom Filter
+//!
+//! A space-efficient probabilistic data structure for set membership testing.
+//!
+//! A bloom filter can tell you with certainty that a key is **not** in the set
+//! (no false negatives), but may occasionally report that a key **is** in the
+//! set when it isn't (false positives). The false positive rate depends on the
+//! number of bits and hash functions used.
+//!
+//! ## Usage in RiptideKV
+//!
+//! Each SSTable embeds a bloom filter built from its keys. During point lookups
+//! the engine checks the bloom filter first -- if it says "not present", the
+//! SSTable is skipped entirely, avoiding expensive index lookups and disk I/O.
+//!
+//! ## Example
+//!
+//! ```rust,no_run
+//! use bloom::BloomFilter;
+//!
+//! let mut bf = BloomFilter::new(1000, 0.01);
+//! bf.insert(b"hello");
+//! assert!(bf.may_contain(b"hello"));
+//! ```
 use std::io::{self, Read, Write};
 
 /// A bloom filter backed by a bit vector with `k` independent hash functions.
@@ -60,7 +60,7 @@ impl BloomFilter {
         let k = ((m as f64 / n) * std::f64::consts::LN_2).ceil() as u32;
         let k = k.max(1);
 
-        let byte_len = ((m + 7) / 8) as usize;
+        let byte_len = (m as usize).div_ceil(8);
 
         Self {
             bits: vec![0u8; byte_len],

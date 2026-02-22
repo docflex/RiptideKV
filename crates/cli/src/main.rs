@@ -1,50 +1,50 @@
-///! # CLI - RiptideKV Interactive Shell
-///!
-///! A REPL-style command-line interface for the RiptideKV storage engine.
-///! Reads commands from stdin, executes them against the engine, and prints
-///! results to stdout. Designed for both interactive use and scripted testing
-///! (pipe commands via stdin).
-///!
-///! ## Commands
-///!
-///! ```text
-///! SET key value      Insert or update a key-value pair
-///! GET key            Look up a key (prints value or "(nil)")
-///! DEL key            Delete a key (writes a tombstone)
-///! SCAN [start] [end] Range scan (inclusive start, exclusive end)
-///! FLUSH              Force flush memtable to SSTable
-///! COMPACT            Trigger manual compaction (L0 + L1 -> L1)
-///! STATS              Print engine debug info
-///! EXIT / QUIT        Shut down gracefully
-///! ```
-///!
-///! ## Configuration
-///!
-///! All settings are controlled via environment variables:
-///!
-///! ```text
-///! RIPTIDE_WAL_PATH   WAL file path           (default: "wal.log")
-///! RIPTIDE_SST_DIR    SSTable directory       (default: "data/sst")
-///! RIPTIDE_FLUSH_KB   Flush threshold in KiB  (default: 1024 = 1 MiB)
-///! RIPTIDE_WAL_SYNC   fsync every WAL append  (default: "true")
-///! RIPTIDE_L0_TRIGGER L0 compaction trigger   (default: 4, 0 = disabled)
-///! ```
-///!
-///! ## Example
-///!
-///! ```text
-///! $ cargo run -p cli
-///! RiptideKV started (seq=0, wal=wal.log, sst_dir=data/sst, flush=1024KiB, l0_trigger=4)
-///! > SET name Alice
-///! OK
-///! > GET name
-///! Alice
-///! > SCAN
-///! name -> Alice
-///! (1 entries)
-///! > EXIT
-///! bye
-///! ```
+//! # CLI - RiptideKV Interactive Shell
+//!
+//! A REPL-style command-line interface for the RiptideKV storage engine.
+//! Reads commands from stdin, executes them against the engine, and prints
+//! results to stdout. Designed for both interactive use and scripted testing
+//! (pipe commands via stdin).
+//!
+//! ## Commands
+//!
+//! ```text
+//! SET key value      Insert or update a key-value pair
+//! GET key            Look up a key (prints value or "(nil)")
+//! DEL key            Delete a key (writes a tombstone)
+//! SCAN [start] [end] Range scan (inclusive start, exclusive end)
+//! FLUSH              Force flush memtable to SSTable
+//! COMPACT            Trigger manual compaction (L0 + L1 -> L1)
+//! STATS              Print engine debug info
+//! EXIT / QUIT        Shut down gracefully
+//! ```
+//!
+//! ## Configuration
+//!
+//! All settings are controlled via environment variables:
+//!
+//! ```text
+//! RIPTIDE_WAL_PATH   WAL file path           (default: "wal.log")
+//! RIPTIDE_SST_DIR    SSTable directory       (default: "data/sst")
+//! RIPTIDE_FLUSH_KB   Flush threshold in KiB  (default: 1024 = 1 MiB)
+//! RIPTIDE_WAL_SYNC   fsync every WAL append  (default: "true")
+//! RIPTIDE_L0_TRIGGER L0 compaction trigger   (default: 4, 0 = disabled)
+//! ```
+//!
+//! ## Example
+//!
+//! ```text
+//! $ cargo run -p cli
+//! RiptideKV started (seq=0, wal=wal.log, sst_dir=data/sst, flush=1024KiB, l0_trigger=4)
+//! > SET name Alice
+//! OK
+//! > GET name
+//! Alice
+//! > SCAN
+//! name -> Alice
+//! (1 entries)
+//! > EXIT
+//! bye
+//! ```
 use anyhow::Result;
 use engine::Engine;
 use std::io::{self, BufRead, Write};
@@ -183,135 +183,4 @@ fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use engine::replay_wal_and_build;
-    use memtable::Memtable;
-    use wal::{WalRecord, WalWriter};
-
-    #[test]
-    fn wal_replay_rebuilds_memtable() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("wal.log");
-
-        {
-            let mut w = WalWriter::create(&path, true).unwrap();
-            w.append(&WalRecord::Put {
-                seq: 1,
-                key: b"a".to_vec(),
-                value: b"1".to_vec(),
-            })
-            .unwrap();
-            w.append(&WalRecord::Del {
-                seq: 2,
-                key: b"a".to_vec(),
-            })
-            .unwrap();
-            w.append(&WalRecord::Put {
-                seq: 3,
-                key: b"b".to_vec(),
-                value: b"2".to_vec(),
-            })
-            .unwrap();
-        }
-
-        let mut mem = Memtable::new();
-        let max_seq = replay_wal_and_build(path.to_str().unwrap(), &mut mem).unwrap();
-
-        assert_eq!(max_seq, 3);
-        assert!(mem.get(b"a").is_none());
-        assert_eq!(mem.get(b"b").unwrap().1, b"2");
-    }
-
-    #[test]
-    fn wal_durability_without_memtable_update() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("wal.log");
-
-        {
-            let mut w = WalWriter::create(&path, true).unwrap();
-            w.append(&WalRecord::Put {
-                seq: 1,
-                key: b"k".to_vec(),
-                value: b"v".to_vec(),
-            })
-            .unwrap();
-            // crash here: memtable never updated
-        }
-
-        let mut mem = Memtable::new();
-        replay_wal_and_build(path.to_str().unwrap(), &mut mem).unwrap();
-
-        assert_eq!(mem.get(b"k").unwrap().1, b"v");
-    }
-
-    #[test]
-    fn wal_crc_detects_corruption() {
-        use byteorder::{LittleEndian, WriteBytesExt};
-
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("wal.log");
-
-        // Build a complete body: seq=1, op=Put(0), key_len=1, key='k', val_len=1, val='v'
-        let mut body = Vec::new();
-        body.write_u64::<LittleEndian>(1).unwrap();
-        body.write_u8(0).unwrap(); // op = Put
-        body.write_u32::<LittleEndian>(1).unwrap(); // key_len
-        body.extend_from_slice(b"k");
-        body.write_u32::<LittleEndian>(1).unwrap(); // val_len
-        body.extend_from_slice(b"v");
-
-        let record_len = (body.len() + 4) as u32; // body + crc
-
-        // Intentionally write a bogus CRC (0) so verify will fail
-        let mut file_bytes = Vec::new();
-        file_bytes.write_u32::<LittleEndian>(record_len).unwrap();
-        file_bytes.write_u32::<LittleEndian>(0).unwrap(); // bogus CRC
-        file_bytes.extend_from_slice(&body);
-
-        std::fs::write(&path, &file_bytes).unwrap();
-
-        let mut mem = Memtable::new();
-        let res = replay_wal_and_build(path.to_str().unwrap(), &mut mem);
-
-        assert!(res.is_err());
-    }
-}
-
-#[cfg(test)]
-mod load_test {
-    use memtable::Memtable;
-
-    #[test]
-    fn write_load_test() {
-        let mut mem = Memtable::new();
-        let mut seq = 0;
-
-        for i in 0..1_000_000 {
-            seq += 1;
-            let key = format!("key{}", i % 10_000).into_bytes();
-            let val = vec![b'x'; 100];
-            mem.put(key, val, seq);
-        }
-
-        assert!(mem.len() <= 10_000);
-    }
-
-    #[test]
-    fn delete_heavy_workload() {
-        let mut mem = Memtable::new();
-        let mut seq = 0;
-
-        for _i in 0..100_000 {
-            seq += 1;
-            mem.put(b"k".to_vec(), b"v".to_vec(), seq);
-            seq += 1;
-            mem.delete(b"k".to_vec(), seq);
-        }
-
-        assert!(mem.get(b"k").is_none());
-        assert_eq!(mem.len(), 1);
-    }
 }

@@ -1,63 +1,63 @@
-///! # Engine - RiptideKV Storage Engine
-///!
-///! The central orchestrator that ties together the [`memtable`], [`wal`], and
-///! [`sstable`] crates into a complete LSM-tree key-value store.
-///!
-///! ## Architecture
-///!
-///! ```text
-///! Client
-///!   |
-///!   v
-///! ┌───────────────────────────────────────────────┐
-///! │                   ENGINE                      │
-///! │                                               │
-///! │ write.rs → WAL append → Memtable insert       │
-///! │              |                                │
-///! │              |  (threshold exceeded?)         │
-///! │              |            yes                 │
-///! │              v                                │
-///! │           flush() → new SSTable               │
-///! │              |                                │
-///! │              |  (L0 count >= trigger?)        │
-///! │              |            yes                 │
-///! │              v                                │
-///! │           compact() → merged L1 SST           │
-///! │                                               │
-///! │ read.rs → Memtable → L0 SSTs → L1 SSTs        │
-///! │            (first match wins)                 │
-///! └───────────────────────────────────────────────┘
-///! ```
-///!
-///! ## Module Responsibilities
-///!
-///! | Module        | Purpose                                               |
-///! |--------------|-------------------------------------------------------|
-///! | [`lib.rs`]   | `Engine` struct, constructor, accessors, `Debug`, `Drop` |
-///! | [`recovery`] | WAL replay, SSTable loading, tmp file cleanup          |
-///! | [`write`]    | `set()`, `del()`, `force_flush()`, internal `flush()`   |
-///! | [`read`]     | `get()`, `scan()`                                      |
-///! | [`compaction`] | `compact()` with streaming merge + tombstone GC     |
-///! | [`manifest`] | Persistent L0/L1 level tracking (atomic file ops)      |
-///!
-///! ## Levels
-///!
-///! ```text
-///! ┌────────────────────────────┐  ← freshest, checked first
-///! │ MEMTABLE                   │
-///! ├────────────────────────────┤  ← from flushes (may overlap)
-///! │ L0 SSTables                │
-///! ├────────────────────────────┤  ← from compaction (no overlap)
-///! │ L1 SSTables                │
-///! └────────────────────────────┘
-///! ```
-///!
-///! ## Crash Safety
-///!
-///! Every write is appended to the WAL **before** the Memtable update. The WAL
-///! is only truncated **after** a successful flush + manifest update. SSTables
-///! are written atomically via temp file + rename. The manifest uses the same
-///! atomic write pattern. See [`ARCHITECTURE.md`] for the full crash matrix.
+//! # Engine - RiptideKV Storage Engine
+//!
+//! The central orchestrator that ties together the [`memtable`], [`wal`], and
+//! [`sstable`] crates into a complete LSM-tree key-value store.
+//!
+//! ## Architecture
+//!
+//! ```text
+//! Client
+//!   |
+//!   v
+//! ┌───────────────────────────────────────────────┐
+//! │                   ENGINE                      │
+//! │                                               │
+//! │ write.rs → WAL append → Memtable insert       │
+//! │              |                                │
+//! │              |  (threshold exceeded?)         │
+//! │              |            yes                 │
+//! │              v                                │
+//! │           flush() → new SSTable               │
+//! │              |                                │
+//! │              |  (L0 count >= trigger?)        │
+//! │              |            yes                 │
+//! │              v                                │
+//! │           compact() → merged L1 SST           │
+//! │                                               │
+//! │ read.rs → Memtable → L0 SSTs → L1 SSTs        │
+//! │            (first match wins)                 │
+//! └───────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Module Responsibilities
+//!
+//! | Module        | Purpose                                               |
+//! |--------------|-------------------------------------------------------|
+//! | [`lib.rs`]   | `Engine` struct, constructor, accessors, `Debug`, `Drop` |
+//! | [`recovery`] | WAL replay, SSTable loading, tmp file cleanup          |
+//! | [`write`]    | `set()`, `del()`, `force_flush()`, internal `flush()`   |
+//! | [`read`]     | `get()`, `scan()`                                      |
+//! | [`compaction`] | `compact()` with streaming merge + tombstone GC     |
+//! | [`manifest`] | Persistent L0/L1 level tracking (atomic file ops)      |
+//!
+//! ## Levels
+//!
+//! ```text
+//! ┌────────────────────────────┐  ← freshest, checked first
+//! │ MEMTABLE                   │
+//! ├────────────────────────────┤  ← from flushes (may overlap)
+//! │ L0 SSTables                │
+//! ├────────────────────────────┤  ← from compaction (no overlap)
+//! │ L1 SSTables                │
+//! └────────────────────────────┘
+//! ```
+//!
+//! ## Crash Safety
+//!
+//! Every write is appended to the WAL **before** the Memtable update. The WAL
+//! is only truncated **after** a successful flush + manifest update. SSTables
+//! are written atomically via temp file + rename. The manifest uses the same
+//! atomic write pattern. See [`ARCHITECTURE.md`] for the full crash matrix.
 mod compaction;
 mod manifest;
 mod read;

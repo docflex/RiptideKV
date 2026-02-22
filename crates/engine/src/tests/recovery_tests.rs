@@ -151,7 +151,7 @@ fn sst_sort_order_is_correct_across_many_flushes() -> Result<()> {
     for i in 0..15u64 {
         let key = format!("k{:02}", i).into_bytes();
         let expected = format!("v{}", i).into_bytes();
-        let (_, val) = engine.get(&key)?.expect(&format!("k{:02} missing", i));
+        let (_, val) = engine.get(&key)?.unwrap_or_else(|| panic!("k{:02} missing", i));
         assert_eq!(val, expected, "k{:02} has wrong value", i);
     }
 

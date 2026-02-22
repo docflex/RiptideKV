@@ -97,7 +97,7 @@ impl<'a> MergeIterator<'a> {
     ///
     /// Duplicate keys (same key from multiple SSTables) are resolved by
     /// keeping only the entry with the highest sequence number.
-    pub fn next(&mut self) -> Result<Option<(Vec<u8>, ValueEntry)>> {
+    pub fn next_entry(&mut self) -> Result<Option<(Vec<u8>, ValueEntry)>> {
         loop {
             let top = match self.heap.pop() {
                 Some(e) => e,
@@ -156,7 +156,7 @@ impl<'a> MergeIterator<'a> {
     /// Useful for testing and for building a merged memtable for compaction.
     pub fn collect_all(&mut self) -> Result<Vec<(Vec<u8>, ValueEntry)>> {
         let mut result = Vec::new();
-        while let Some(pair) = self.next()? {
+        while let Some(pair) = self.next_entry()? {
             result.push(pair);
         }
         Ok(result)

@@ -8,7 +8,7 @@ fn new_creates_valid_filter() {
     let bf = BloomFilter::new(100, 0.01);
     assert!(bf.num_bits() > 0);
     assert!(bf.num_hashes() > 0);
-    assert!(bf.bits.len() > 0);
+    assert!(!bf.bits.is_empty());
 }
 
 #[test]

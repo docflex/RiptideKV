@@ -5,6 +5,7 @@ use memtable::Memtable;
 use tempfile::tempdir;
 
 /// Helper: write a memtable to an SSTable and open a reader.
+#[allow(clippy::type_complexity)]
 fn write_and_open(
     dir: &std::path::Path,
     name: &str,
@@ -80,36 +81,26 @@ fn merge_two_non_overlapping() -> Result<()> {
 fn merge_many_keys_across_sstables() -> Result<()> {
     let dir = tempdir()?;
 
-    // 3 SSTables, each with 100 keys, some overlapping
-    let r1 = write_and_open(
-        dir.path(),
-        "1.sst",
-        &(0..100u64)
-            .map(|i| {
-                let key = format!("key{:04}", i);
-                (key.as_bytes().to_vec(), Some(b"v1".to_vec()), i)
-            })
-            .collect::<Vec<_>>()
-            .iter()
-            .map(|(k, v, s)| (k.as_slice(), v.as_deref(), *s))
-            .collect::<Vec<_>>()
-            .as_slice(),
-    )?;
+    // Build owned entry data first
+    let entries1_owned: Vec<(Vec<u8>, Option<Vec<u8>>, u64)> = (0..100u64)
+        .map(|i| (format!("key{:04}", i).into_bytes(), Some(b"v1".to_vec()), i))
+        .collect();
+    #[allow(clippy::type_complexity)]
+    let entries1: Vec<(&[u8], Option<&[u8]>, u64)> = entries1_owned
+        .iter()
+        .map(|(k, v, s)| (k.as_slice(), v.as_deref(), *s))
+        .collect();
+    let r1 = write_and_open(dir.path(), "1.sst", &entries1)?;
 
-    let r2 = write_and_open(
-        dir.path(),
-        "2.sst",
-        &(50..150u64)
-            .map(|i| {
-                let key = format!("key{:04}", i);
-                (key.as_bytes().to_vec(), Some(b"v2".to_vec()), i + 100)
-            })
-            .collect::<Vec<_>>()
-            .iter()
-            .map(|(k, v, s)| (k.as_slice(), v.as_deref(), *s))
-            .collect::<Vec<_>>()
-            .as_slice(),
-    )?;
+    let entries2_owned: Vec<(Vec<u8>, Option<Vec<u8>>, u64)> = (50..150u64)
+        .map(|i| (format!("key{:04}", i).into_bytes(), Some(b"v2".to_vec()), i + 100))
+        .collect();
+    #[allow(clippy::type_complexity)]
+    let entries2: Vec<(&[u8], Option<&[u8]>, u64)> = entries2_owned
+        .iter()
+        .map(|(k, v, s)| (k.as_slice(), v.as_deref(), *s))
+        .collect();
+    let r2 = write_and_open(dir.path(), "2.sst", &entries2)?;
 
     let readers = vec![r1, r2];
     let mut iter = MergeIterator::new(&readers);
@@ -122,7 +113,7 @@ fn merge_many_keys_across_sstables() -> Result<()> {
     for (key, entry) in &result {
         let key_str = String::from_utf8_lossy(key);
         if let Ok(num) = key_str.trim_start_matches("key").parse::<u64>() {
-            if num >= 50 && num < 100 {
+            if (50..100).contains(&num) {
                 // Should be from r2 (seq = num + 100)
                 assert_eq!(entry.seq, num + 100, "key {} should have seq from r2", num);
                 assert_eq!(entry.value, Some(b"v2".to_vec()));
