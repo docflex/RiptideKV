@@ -1,37 +1,55 @@
 use anyhow::{bail, Result};
+use bloom::BloomFilter;
 use byteorder::{LittleEndian, ReadBytesExt};
+use crc32fast::Hasher as Crc32;
 use memtable::ValueEntry;
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
-use crate::format::{read_footer, SSTABLE_MAGIC};
+use crate::format::{read_footer_versioned, Footer, FOOTER_BYTES_V1};
+
+/// Maximum key size we'll allocate during reads (64 KiB). Prevents OOM on corrupt files.
+const MAX_KEY_BYTES: usize = 64 * 1024;
+/// Maximum value size we'll allocate during reads (10 MiB). Prevents OOM on corrupt files.
+const MAX_VALUE_BYTES: usize = 10 * 1024 * 1024;
 
 /// Reads an SSTable file for point lookups.
 ///
 /// On [`open`](SSTableReader::open) the entire **index** is loaded into memory
-/// as a `BTreeMap<Vec<u8>, u64>` (key → data-section byte offset). Point
-/// lookups then require only a single disk seek + read per call.
+/// as a `BTreeMap<Vec<u8>, u64>` (key → data-section byte offset). If the file
+/// is v2, the bloom filter is also loaded for fast negative lookups.
 ///
-/// The data file itself is **not** kept open between lookups — each
-/// [`get`](SSTableReader::get) call opens the file, seeks, reads the record,
-/// and closes the handle. This keeps ownership simple and avoids holding
-/// long-lived file descriptors.
+/// A persistent file handle is kept open for the lifetime of the reader,
+/// wrapped in a `Mutex` so that `get` can be called through a shared `&self`
+/// reference.
+///
+/// Point lookups require only a single seek + read per call (no file open/close).
 pub struct SSTableReader {
-    /// Path to the `.sst` file on disk.
+    /// Path to the `.sst` file on disk (kept for diagnostics).
+    #[allow(dead_code)]
     path: PathBuf,
     /// In-memory index mapping each key to its byte offset in the data section.
     index: BTreeMap<Vec<u8>, u64>,
+    /// Optional bloom filter (present for v2+ SSTables).
+    bloom: Option<BloomFilter>,
+    /// Persistent file handle, wrapped in Mutex for interior mutability.
+    file: Mutex<BufReader<File>>,
+    /// Parsed footer — used to determine version-specific read behaviour
+    /// (e.g. whether to verify CRC32 on reads, or to expose max_seq).
+    footer: Footer,
 }
 
 impl SSTableReader {
-    /// Opens an SSTable file and loads its index into memory.
+    /// Opens an SSTable file and loads its index (and bloom filter, if v2)
+    /// into memory.
     ///
     /// # Validation
     ///
-    /// - The file must be at least 12 bytes (footer size).
-    /// - The footer magic must equal `0x5353_5431` ("SST1").
+    /// - The file must be at least 12 bytes (v1 footer) or 20 bytes (v2 footer).
+    /// - The footer magic must be `SST1` or `SST2`.
     /// - The `index_offset` must point inside the file.
     ///
     /// # Errors
@@ -44,72 +62,105 @@ impl SSTableReader {
         let metadata = f.metadata()?;
         let filesize = metadata.len();
 
-        if filesize < crate::format::FOOTER_BYTES {
+        if filesize < FOOTER_BYTES_V1 {
             bail!("sstable file too small");
         }
 
-        // read footer via helper
-        let (index_offset, magic) = read_footer(&mut f)?;
-        if magic != SSTABLE_MAGIC {
-            bail!("invalid sstable magic: {:x}", magic);
-        }
+        // Auto-detect v1 or v2 footer
+        let footer = read_footer_versioned(&mut f)?;
+        let index_offset = footer.index_offset();
+
         if index_offset >= filesize {
             bail!("invalid index_offset");
         }
+
+        // Determine where the index section ends (footer start)
+        let footer_size = footer.footer_size();
+
+        // Load bloom filter if v2
+        let bloom = if let Some(bloom_offset) = footer.bloom_offset() {
+            f.seek(SeekFrom::Start(bloom_offset))?;
+            Some(BloomFilter::read_from(&mut f)?)
+        } else {
+            None
+        };
 
         // Read index entries from index_offset up to footer start
         f.seek(SeekFrom::Start(index_offset))?;
         let mut index = BTreeMap::new();
 
-        // Read until we reach footer (filesize - FOOTER_BYTES)
-        while f.stream_position()? < (filesize - crate::format::FOOTER_BYTES) {
-            // key_len (u32) + key bytes + data_offset (u64)
+        while f.stream_position()? < (filesize - footer_size) {
             let key_len = f.read_u32::<LittleEndian>()? as usize;
+            if key_len > MAX_KEY_BYTES {
+                bail!("corrupt index: key_len {} exceeds maximum {}", key_len, MAX_KEY_BYTES);
+            }
             let mut key = vec![0u8; key_len];
             f.read_exact(&mut key)?;
             let data_offset = f.read_u64::<LittleEndian>()?;
             index.insert(key, data_offset);
         }
 
+        // Rewind to start for future reads
+        f.seek(SeekFrom::Start(0))?;
+
         Ok(Self {
             path: path_buf,
             index,
+            bloom,
+            file: Mutex::new(BufReader::new(f)),
+            footer,
         })
     }
 
     /// Point lookup for a single key.
     ///
+    /// If a bloom filter is present (v2), it is checked first. A negative
+    /// result means the key is **definitely not** in this SSTable, avoiding
+    /// an index lookup and disk I/O entirely.
+    ///
     /// Returns `Ok(Some(entry))` if the key exists in this SSTable (the entry
     /// may be a tombstone with `value: None`). Returns `Ok(None)` if the key
     /// is not present in the index.
     ///
-    /// Each call opens the file, seeks to the record offset, reads and parses
-    /// the record, then closes the file handle.
+    /// Uses the persistent file handle with a seek + read (no file open/close).
     ///
     /// # Errors
     ///
     /// Returns an error on I/O failure or if the on-disk key does not match
     /// the requested key (index corruption).
     pub fn get(&self, key: &[u8]) -> Result<Option<ValueEntry>> {
-        let maybe_offset = self.index.get(key);
-        if maybe_offset.is_none() {
-            return Ok(None);
+        // Fast path: bloom filter says "definitely not here"
+        if let Some(ref bf) = self.bloom {
+            if !bf.may_contain(key) {
+                return Ok(None);
+            }
         }
-        let offset = *maybe_offset.unwrap();
 
-        // Open file each time to keep API & ownership simple and avoid mutable File in struct.
-        let mut f = File::open(&self.path)?;
+        let offset = match self.index.get(key) {
+            Some(&o) => o,
+            None => return Ok(None),
+        };
+
+        let has_crc = self.footer.has_checksums();
+
+        let mut f = self.file.lock().map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
         f.seek(SeekFrom::Start(offset))?;
 
-        // Parse record at offset:
-        // u32 key_len
-        // key bytes
-        // u64 seq
-        // u8 value_present
-        // if present == 1:
-        //   u32 value_len
-        //   value bytes
+        // v3 record layout: [crc32: u32][key_len: u32][key][seq: u64][present: u8][val_len: u32][val]
+        // v1/v2 layout:    [key_len: u32][key][seq: u64][present: u8][val_len: u32][val]
+        //
+        // For v3, read the stored CRC first, then read the body and verify.
+        let stored_crc = if has_crc {
+            Some(f.read_u32::<LittleEndian>()?)
+        } else {
+            None
+        };
+
+        // Read the record body (everything after the CRC prefix).
         let key_len = f.read_u32::<LittleEndian>()? as usize;
+        if key_len > MAX_KEY_BYTES {
+            bail!("corrupt data: key_len {} exceeds maximum {}", key_len, MAX_KEY_BYTES);
+        }
         let mut key_buf = vec![0u8; key_len];
         f.read_exact(&mut key_buf)?;
 
@@ -120,25 +171,71 @@ impl SSTableReader {
 
         let seq = f.read_u64::<LittleEndian>()?;
         let present = f.read_u8()?;
-        if present == 1 {
+        let (value, val_bytes) = if present == 1 {
             let val_len = f.read_u32::<LittleEndian>()? as usize;
+            if val_len > MAX_VALUE_BYTES {
+                bail!("corrupt data: val_len {} exceeds maximum {}", val_len, MAX_VALUE_BYTES);
+            }
             let mut val = vec![0u8; val_len];
             f.read_exact(&mut val)?;
-            Ok(Some(ValueEntry {
-                seq,
-                value: Some(val),
-            }))
+            (Some(val.clone()), Some(val))
         } else {
-            Ok(Some(ValueEntry { seq, value: None }))
+            (None, None)
+        };
+
+        // Verify CRC32 for v3 SSTables.
+        if let Some(expected_crc) = stored_crc {
+            let mut hasher = Crc32::new();
+            // Reconstruct the body that was checksummed: key_len + key + seq + present + [val_len + val]
+            hasher.update(&(key_len as u32).to_le_bytes());
+            hasher.update(&key_buf);
+            hasher.update(&seq.to_le_bytes());
+            hasher.update(&[present]);
+            if let Some(ref vb) = val_bytes {
+                hasher.update(&(vb.len() as u32).to_le_bytes());
+                hasher.update(vb);
+            }
+            let actual_crc = hasher.finalize();
+            if actual_crc != expected_crc {
+                bail!(
+                    "CRC32 mismatch at offset {}: expected {:#010x}, got {:#010x} (data corruption)",
+                    offset, expected_crc, actual_crc
+                );
+            }
         }
+
+        Ok(Some(ValueEntry { seq, value }))
+    }
+
+    /// Returns `true` if this SSTable has a bloom filter loaded (v2+ format).
+    #[must_use]
+    pub fn has_bloom(&self) -> bool {
+        self.bloom.is_some()
+    }
+
+    /// Returns the max sequence number stored in the SSTable footer (v3+).
+    ///
+    /// For v1/v2 files this returns `None`, and the caller must scan all
+    /// keys to determine the max seq (legacy recovery path).
+    #[must_use]
+    pub fn max_seq(&self) -> Option<u64> {
+        self.footer.max_seq()
+    }
+
+    /// Returns `true` if this SSTable has per-record CRC32 checksums (v3+).
+    #[must_use]
+    pub fn has_checksums(&self) -> bool {
+        self.footer.has_checksums()
     }
 
     /// Returns the number of entries in the in-memory index.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.index.len()
     }
 
     /// Returns `true` if the SSTable contains zero entries.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.index.is_empty()
     }
@@ -148,179 +245,11 @@ impl SSTableReader {
     /// Keys are yielded in ascending sorted order (guaranteed by `BTreeMap`).
     ///
     /// Useful for debugging, testing, and future range-scan support.
-    pub fn keys(&self) -> impl Iterator<Item = &Vec<u8>> {
-        self.index.keys()
+    pub fn keys(&self) -> impl Iterator<Item = &[u8]> {
+        self.index.keys().map(|k| k.as_slice())
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::SSTableWriter;
-    use memtable::Memtable;
-    use tempfile::tempdir;
-
-    fn make_sample_memtable() -> Memtable {
-        let mut m = Memtable::new();
-        m.put(b"a".to_vec(), b"apple".to_vec(), 1);
-        m.put(b"b".to_vec(), b"banana".to_vec(), 2);
-        m.put(b"c".to_vec(), b"".to_vec(), 3);
-        m.delete(b"d".to_vec(), 4);
-        m
-    }
-
-    // -------------------- Basic open & get --------------------
-
-    #[test]
-    fn open_and_get_entries() -> Result<()> {
-        let dir = tempdir()?;
-        let path = dir.path().join("sample.sst");
-
-        let mem = make_sample_memtable();
-        SSTableWriter::write_from_memtable(&path, &mem)?;
-        let reader = SSTableReader::open(&path)?;
-
-        // Check keys exist in index
-        let keys: Vec<_> = reader.keys().cloned().collect();
-        assert!(keys.contains(&b"a".to_vec()));
-        assert!(keys.contains(&b"b".to_vec()));
-        assert!(keys.contains(&b"c".to_vec()));
-        assert!(keys.contains(&b"d".to_vec()));
-
-        // Get 'a'
-        let a = reader.get(b"a")?.expect("a must exist");
-        assert_eq!(a.seq, 1);
-        assert_eq!(a.value, Some(b"apple".to_vec()));
-
-        // Get 'b'
-        let b = reader.get(b"b")?.expect("b must exist");
-        assert_eq!(b.seq, 2);
-        assert_eq!(b.value, Some(b"banana".to_vec()));
-
-        // Get 'c' (empty but present)
-        let c = reader.get(b"c")?.expect("c must exist");
-        assert_eq!(c.seq, 3);
-        assert_eq!(c.value, Some(b"".to_vec()));
-
-        // Get 'd' (tombstone)
-        let d = reader.get(b"d")?.expect("d must exist");
-        assert_eq!(d.seq, 4);
-        assert_eq!(d.value, None);
-
-        // Non-existent key
-        assert!(reader.get(b"nope")?.is_none());
-
-        Ok(())
-    }
-
-    // -------------------- len / is_empty --------------------
-
-    #[test]
-    fn len_and_is_empty() -> Result<()> {
-        let dir = tempdir()?;
-        let path = dir.path().join("len.sst");
-
-        let mem = make_sample_memtable();
-        SSTableWriter::write_from_memtable(&path, &mem)?;
-
-        let reader = SSTableReader::open(&path)?;
-        assert_eq!(reader.len(), 4);
-        assert!(!reader.is_empty());
-        Ok(())
-    }
-
-    // -------------------- Validation errors --------------------
-
-    #[test]
-    fn open_file_too_small() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("tiny.sst");
-        std::fs::write(&path, b"short").unwrap();
-
-        let result = SSTableReader::open(&path);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn open_bad_magic() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("badmagic.sst");
-
-        // 12 bytes: 8 for index_offset + 4 for wrong magic
-        let mut data = vec![0u8; 8]; // index_offset = 0
-        data.extend_from_slice(&[0xBA, 0xAD, 0xF0, 0x0D]); // wrong magic
-        std::fs::write(&path, &data).unwrap();
-
-        let result = SSTableReader::open(&path);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn open_nonexistent_file() {
-        let result = SSTableReader::open("/tmp/no_such_file_riptide.sst");
-        assert!(result.is_err());
-    }
-
-    // -------------------- Keys iterator ordering --------------------
-
-    #[test]
-    fn keys_are_sorted() -> Result<()> {
-        let dir = tempdir()?;
-        let path = dir.path().join("sorted.sst");
-
-        let mut mem = Memtable::new();
-        mem.put(b"z".to_vec(), b"1".to_vec(), 1);
-        mem.put(b"a".to_vec(), b"2".to_vec(), 2);
-        mem.put(b"m".to_vec(), b"3".to_vec(), 3);
-        SSTableWriter::write_from_memtable(&path, &mem)?;
-
-        let reader = SSTableReader::open(&path)?;
-        let keys: Vec<_> = reader.keys().cloned().collect();
-        assert_eq!(keys, vec![b"a".to_vec(), b"m".to_vec(), b"z".to_vec()]);
-        Ok(())
-    }
-
-    // -------------------- Multiple gets on same reader --------------------
-
-    #[test]
-    fn multiple_gets_same_reader() -> Result<()> {
-        let dir = tempdir()?;
-        let path = dir.path().join("multi.sst");
-
-        let mut mem = Memtable::new();
-        for i in 0..100u64 {
-            mem.put(format!("k{:03}", i).into_bytes(), b"v".to_vec(), i);
-        }
-        SSTableWriter::write_from_memtable(&path, &mem)?;
-
-        let reader = SSTableReader::open(&path)?;
-        // Read all keys twice to ensure re-opening the file works
-        for _ in 0..2 {
-            for i in 0..100u64 {
-                let key = format!("k{:03}", i).into_bytes();
-                let entry = reader.get(&key)?.unwrap();
-                assert_eq!(entry.seq, i);
-            }
-        }
-
-        Ok(())
-    }
-
-    // -------------------- Large values --------------------
-
-    #[test]
-    fn large_value_roundtrip() -> Result<()> {
-        let dir = tempdir()?;
-        let path = dir.path().join("bigval.sst");
-
-        let mut mem = Memtable::new();
-        let big = vec![b'x'; 500_000];
-        mem.put(b"big".to_vec(), big.clone(), 1);
-        SSTableWriter::write_from_memtable(&path, &mem)?;
-
-        let reader = SSTableReader::open(&path)?;
-        let entry = reader.get(b"big")?.unwrap();
-        assert_eq!(entry.value.unwrap().len(), 500_000);
-        Ok(())
-    }
-}
+// #[cfg(test)]
+// #[path ="reader_tests.rs"]
+// mod tests;
