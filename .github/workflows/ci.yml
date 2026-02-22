@@ -68,8 +68,12 @@ jobs:
             target: x86_64-pc-windows-msvc
             artifact: riptidekv-windows-x86_64
           - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: riptidekv-macos-x86_64
+          - os: macos-latest
             target: aarch64-apple-darwin
             artifact: riptidekv-macos-aarch64
+
 
     runs-on: ${{ matrix.os }}
     steps:
