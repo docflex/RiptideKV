@@ -93,7 +93,13 @@ fn merge_many_keys_across_sstables() -> Result<()> {
     let r1 = write_and_open(dir.path(), "1.sst", &entries1)?;
 
     let entries2_owned: Vec<(Vec<u8>, Option<Vec<u8>>, u64)> = (50..150u64)
-        .map(|i| (format!("key{:04}", i).into_bytes(), Some(b"v2".to_vec()), i + 100))
+        .map(|i| {
+            (
+                format!("key{:04}", i).into_bytes(),
+                Some(b"v2".to_vec()),
+                i + 100,
+            )
+        })
         .collect();
     #[allow(clippy::type_complexity)]
     let entries2: Vec<(&[u8], Option<&[u8]>, u64)> = entries2_owned
