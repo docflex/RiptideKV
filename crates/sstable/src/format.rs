@@ -26,10 +26,10 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Result as IoResult, Seek, SeekFrom, Write};
 
-/// Magic number identifying SSTable v1 files (ASCII "SST1").
+/// Magic number identifying SSTable v1 files (ASCII "SST1") Can be Removed Later.
 pub const SSTABLE_MAGIC_V1: u32 = 0x5353_5431;
 
-/// Magic number identifying SSTable v2 files (ASCII "SST2").
+/// Magic number identifying SSTable v2 files (ASCII "SST2") Can be Removed Later.
 pub const SSTABLE_MAGIC_V2: u32 = 0x5353_5432;
 
 /// Magic number identifying SSTable v3 files (ASCII "SST3").
