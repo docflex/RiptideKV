@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
+    tags:
+      - 'v*'
   pull_request:
     branches: [main]
 
@@ -55,7 +57,7 @@ jobs:
             artifact: riptidekv-windows-x86_64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact: riptidekv-macos-x86_64
+            artifact: riptidekv-macos-aarch64
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -106,7 +108,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
-    permission:
+    permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
