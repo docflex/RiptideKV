@@ -16,14 +16,14 @@ fn recovery_from_wal() -> Result<()> {
 
     // Write some data, then drop engine (simulates crash)
     {
-        let mut engine = Engine::new(&wal_path, &sst_dir, 1024 * 1024, true)?;
+        let mut engine = Engine::from_parts(&wal_path, &sst_dir, 1024 * 1024, true)?;
         engine.set(b"a".to_vec(), b"1".to_vec())?;
         engine.set(b"b".to_vec(), b"2".to_vec())?;
         engine.del(b"a".to_vec())?;
     }
 
     // Reopen engine - should replay WAL
-    let engine = Engine::new(&wal_path, &sst_dir, 1024 * 1024, true)?;
+    let engine = Engine::from_parts(&wal_path, &sst_dir, 1024 * 1024, true)?;
     assert!(engine.get(b"a")?.is_none()); // deleted
     assert_eq!(engine.get(b"b")?.unwrap().1, b"2".to_vec());
     assert_eq!(engine.seq(), 3); // 3 operations
@@ -38,13 +38,13 @@ fn recovery_from_sstables() -> Result<()> {
 
     // Write data and force flush
     {
-        let mut engine = Engine::new(&wal_path, &sst_dir, 1, true)?;
+        let mut engine = Engine::from_parts(&wal_path, &sst_dir, 1, true)?;
         engine.set(b"k".to_vec(), b"v".to_vec())?;
         // Flush happened due to threshold=1
     }
 
     // Reopen - WAL is empty but SSTable has the data
-    let engine = Engine::new(&wal_path, &sst_dir, 1024 * 1024, true)?;
+    let engine = Engine::from_parts(&wal_path, &sst_dir, 1024 * 1024, true)?;
     assert_eq!(engine.get(b"k")?.unwrap().1, b"v".to_vec());
     Ok(())
 }
@@ -57,19 +57,19 @@ fn recovery_combines_wal_and_sstables() -> Result<()> {
 
     // Create an engine that flushes immediately
     {
-        let mut engine = Engine::new(&wal_path, &sst_dir, 1, true)?;
+        let mut engine = Engine::from_parts(&wal_path, &sst_dir, 1, true)?;
         // This triggers flush (threshold=1)
         engine.set(b"flushed".to_vec(), b"in_sst".to_vec())?;
     }
 
     {
         // Reopen with high threshold so next writes stay in WAL
-        let mut engine = Engine::new(&wal_path, &sst_dir, 1024 * 1024, true)?;
+        let mut engine = Engine::from_parts(&wal_path, &sst_dir, 1024 * 1024, true)?;
         engine.set(b"in_wal".to_vec(), b"pending".to_vec())?;
     }
 
     // Final reopen - should have both
-    let engine = Engine::new(&wal_path, &sst_dir, 1024 * 1024, true)?;
+    let engine = Engine::from_parts(&wal_path, &sst_dir, 1024 * 1024, true)?;
     assert_eq!(engine.get(b"flushed")?.unwrap().1, b"in_sst".to_vec());
     assert_eq!(engine.get(b"in_wal")?.unwrap().1, b"pending".to_vec());
     Ok(())
@@ -84,7 +84,7 @@ fn manifest_preserves_l0_l1_across_restart() -> Result<()> {
     let sst = dir.path().join("sst");
 
     {
-        let mut engine = Engine::new(&wal, &sst, 64, false)?;
+        let mut engine = Engine::from_parts(&wal, &sst, 64, false)?;
         engine.set_l0_compaction_trigger(0);
 
         // Create some L0 SSTables
@@ -110,7 +110,7 @@ fn manifest_preserves_l0_l1_across_restart() -> Result<()> {
     }
 
     // Reopen - manifest should preserve L0/L1 assignments
-    let engine = Engine::new(&wal, &sst, 64, false)?;
+    let engine = Engine::from_parts(&wal, &sst, 64, false)?;
     assert!(engine.l0_sstable_count() > 0, "L0 should be preserved");
     assert_eq!(engine.l1_sstable_count(), 1, "L1 should be preserved");
 
@@ -131,7 +131,7 @@ fn sst_sort_order_is_correct_across_many_flushes() -> Result<()> {
     let sst_dir = dir.path().join("sst");
 
     // Use threshold=1 so every set triggers a flush
-    let mut engine = Engine::new(dir.path().join("wal.log"), &sst_dir, 1, false)?;
+    let mut engine = Engine::from_parts(dir.path().join("wal.log"), &sst_dir, 1, false)?;
 
     // Write 15 keys - produces seq 1..15, so filenames span single and
     // double digits. Without zero-padding this breaks.
@@ -145,7 +145,7 @@ fn sst_sort_order_is_correct_across_many_flushes() -> Result<()> {
 
     // Drop and reopen - recovery must load SSTables in correct order
     drop(engine);
-    let engine = Engine::new(dir.path().join("wal.log"), &sst_dir, 1024 * 1024, false)?;
+    let engine = Engine::from_parts(dir.path().join("wal.log"), &sst_dir, 1024 * 1024, false)?;
 
     // All keys must be readable with correct values
     for i in 0..15u64 {
@@ -164,7 +164,7 @@ fn sst_sort_order_is_correct_across_many_flushes() -> Result<()> {
 fn sst_overwrite_across_flushes_returns_newest() -> Result<()> {
     // Write same key across multiple flushes; newest SSTable must win.
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1, // Flush every write
@@ -178,7 +178,7 @@ fn sst_overwrite_across_flushes_returns_newest() -> Result<()> {
 
     // Drop and reopen
     drop(engine);
-    let engine = Engine::new(
+    let engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -205,7 +205,7 @@ fn recovery_cleans_up_tmp_files() -> Result<()> {
     assert!(tmp_file.exists());
 
     // Opening the engine should clean it up
-    let _engine = Engine::new(dir.path().join("wal.log"), &sst_dir, 1024 * 1024, false)?;
+    let _engine = Engine::from_parts(dir.path().join("wal.log"), &sst_dir, 1024 * 1024, false)?;
 
     assert!(
         !tmp_file.exists(),
@@ -224,7 +224,7 @@ fn seq_recovered_from_sstables_after_wal_truncation() -> Result<()> {
 
     // Write data and flush (WAL gets truncated)
     {
-        let mut engine = Engine::new(&wal_path, &sst_dir, 1, false)?;
+        let mut engine = Engine::from_parts(&wal_path, &sst_dir, 1, false)?;
         engine.set(b"a".to_vec(), b"1".to_vec())?;
         thread::sleep(Duration::from_millis(2));
         engine.set(b"b".to_vec(), b"2".to_vec())?;
@@ -234,7 +234,7 @@ fn seq_recovered_from_sstables_after_wal_truncation() -> Result<()> {
     }
 
     // Reopen - WAL is empty, seq must be recovered from SSTables
-    let mut engine = Engine::new(&wal_path, &sst_dir, 1024 * 1024, false)?;
+    let mut engine = Engine::from_parts(&wal_path, &sst_dir, 1024 * 1024, false)?;
     assert!(
         engine.seq() >= 3,
         "seq should be >= 3 from SSTable scan, got {}",

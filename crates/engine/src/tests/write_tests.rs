@@ -9,7 +9,7 @@ use tempfile::tempdir;
 #[test]
 fn set_and_get() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -26,7 +26,7 @@ fn set_and_get() -> Result<()> {
 #[test]
 fn get_missing_key() -> Result<()> {
     let dir = tempdir()?;
-    let engine = Engine::new(
+    let engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -40,7 +40,7 @@ fn get_missing_key() -> Result<()> {
 #[test]
 fn del_removes_key() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -58,7 +58,7 @@ fn del_removes_key() -> Result<()> {
 #[test]
 fn overwrite_key() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -74,7 +74,7 @@ fn overwrite_key() -> Result<()> {
 #[test]
 fn set_after_del_resurrects() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -94,7 +94,7 @@ fn newest_sstable_wins_on_read() -> Result<()> {
     let wal_path = dir.path().join("wal.log");
     let sst_dir = dir.path().join("sst");
 
-    let mut engine = Engine::new(&wal_path, &sst_dir, 1, false)?;
+    let mut engine = Engine::from_parts(&wal_path, &sst_dir, 1, false)?;
 
     // Write k=v1, flush
     engine.set(b"k".to_vec(), b"v1".to_vec())?;
@@ -113,7 +113,7 @@ fn newest_sstable_wins_on_read() -> Result<()> {
 #[test]
 fn force_flush_empty_memtable_is_noop() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -137,14 +137,14 @@ fn force_flush_persists_memtable_data() -> Result<()> {
     let sst = dir.path().join("sst");
 
     {
-        let mut engine = Engine::new(&wal, &sst, 1024 * 1024, false)?;
+        let mut engine = Engine::from_parts(&wal, &sst, 1024 * 1024, false)?;
         engine.set(b"key".to_vec(), b"value".to_vec())?;
         engine.force_flush()?;
         assert_eq!(engine.l0_sstable_count(), 1);
     }
 
     // Reopen - data should be in SSTable, not WAL
-    let engine = Engine::new(&wal, &sst, 1024 * 1024, false)?;
+    let engine = Engine::from_parts(&wal, &sst, 1024 * 1024, false)?;
     let (_, val) = engine.get(b"key")?.expect("key should survive");
     assert_eq!(val, b"value");
     Ok(())
@@ -159,13 +159,13 @@ fn drop_flushes_memtable_to_sstable() -> Result<()> {
     let sst = dir.path().join("sst");
 
     {
-        let mut engine = Engine::new(&wal, &sst, 1024 * 1024, false)?;
+        let mut engine = Engine::from_parts(&wal, &sst, 1024 * 1024, false)?;
         engine.set(b"drop_key".to_vec(), b"drop_val".to_vec())?;
         // Engine drops here - should flush memtable
     }
 
     // Reopen - data should be in SSTable from the Drop flush
-    let engine = Engine::new(&wal, &sst, 1024 * 1024, false)?;
+    let engine = Engine::from_parts(&wal, &sst, 1024 * 1024, false)?;
     let (_, val) = engine.get(b"drop_key")?.expect("key should survive drop");
     assert_eq!(val, b"drop_val");
     assert!(engine.sstable_count() >= 1);
@@ -175,7 +175,7 @@ fn drop_flushes_memtable_to_sstable() -> Result<()> {
 #[test]
 fn set_rejects_oversized_value() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -193,7 +193,7 @@ fn set_rejects_oversized_value() -> Result<()> {
 #[test]
 fn set_accepts_max_key_size() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024 * 1024, // huge threshold to avoid flush
@@ -212,7 +212,7 @@ fn set_accepts_max_key_size() -> Result<()> {
 #[test]
 fn del_rejects_oversized_key() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -235,7 +235,7 @@ fn multiple_flushes_create_multiple_sstables() -> Result<()> {
     let wal_path = dir.path().join("wal.log");
     let sst_dir = dir.path().join("sst");
 
-    let mut engine = Engine::new(&wal_path, &sst_dir, 1, false)?;
+    let mut engine = Engine::from_parts(&wal_path, &sst_dir, 1, false)?;
     // Disable auto-compaction so all L0 SSTables remain on disk.
     engine.set_l0_compaction_trigger(0);
 
@@ -266,7 +266,7 @@ fn multiple_flushes_create_multiple_sstables() -> Result<()> {
 #[test]
 fn seq_increments_on_every_operation() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -288,7 +288,7 @@ fn seq_increments_on_every_operation() -> Result<()> {
 #[test]
 fn set_rejects_empty_key() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -306,7 +306,7 @@ fn set_rejects_empty_key() -> Result<()> {
 #[test]
 fn del_rejects_empty_key() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -323,7 +323,7 @@ fn del_rejects_empty_key() -> Result<()> {
 #[test]
 fn set_rejects_oversized_key() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -346,7 +346,7 @@ fn flush_writes_sstable_and_truncates_wal() -> Result<()> {
     let wal_path = dir.path().join("wal.log");
     let sst_dir = dir.path().join("sst");
 
-    let mut engine = Engine::new(&wal_path, &sst_dir, 1, true)?;
+    let mut engine = Engine::from_parts(&wal_path, &sst_dir, 1, true)?;
     engine.set(b"key1".to_vec(), b"value1".to_vec())?;
 
     assert!(
@@ -366,7 +366,7 @@ fn flush_triggers_at_threshold() -> Result<()> {
     let sst_dir = dir.path().join("sst");
     let threshold = 4 * 1024; // 4 KB for fast test
 
-    let mut engine = Engine::new(&wal_path, &sst_dir, threshold, false)?;
+    let mut engine = Engine::from_parts(&wal_path, &sst_dir, threshold, false)?;
     let value = vec![b'x'; 512];
     let writes = (threshold / value.len()) + 5;
     for i in 0..writes {
@@ -385,7 +385,7 @@ fn flush_triggers_at_threshold() -> Result<()> {
 #[test]
 fn get_reads_from_sstable_after_flush() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1, // tiny threshold - every set triggers flush
@@ -405,7 +405,7 @@ fn tombstone_in_sstable_shadows_older_value() -> Result<()> {
     let sst_dir = dir.path().join("sst");
 
     // Large threshold so we control flushes manually
-    let mut engine = Engine::new(&wal_path, &sst_dir, 1024 * 1024, false)?;
+    let mut engine = Engine::from_parts(&wal_path, &sst_dir, 1024 * 1024, false)?;
 
     // Write k=v, then force flush by lowering threshold temporarily
     engine.set(b"k".to_vec(), b"old_value".to_vec())?;

@@ -46,37 +46,28 @@
 //! bye
 //! ```
 use anyhow::Result;
+use config::EngineConfig;
 use engine::Engine;
 use std::io::{self, BufRead, Write};
 
-/// Reads a configuration value from the environment, falling back to `default`.
-fn env_or(key: &str, default: &str) -> String {
-    std::env::var(key).unwrap_or_else(|_| default.to_string())
-}
-
 fn main() -> Result<()> {
-    // Configuration via environment variables with sensible defaults.
-    //
-    //  RIPTIDE_WAL_PATH   - WAL file path           (default: "wal.log")
-    //  RIPTIDE_SST_DIR    - SSTable directory       (default: "data/sst")
-    //  RIPTIDE_FLUSH_KB   - flush threshold in KiB  (default: 1024 = 1 MiB)
-    //  RIPTIDE_WAL_SYNC   - fsync every WAL append  (default: "true")
-    //  RIPTIDE_L0_TRIGGER - L0 compaction trigger   (default: 4, 0 = disabled)
-    let wal_path = env_or("RIPTIDE_WAL_PATH", "wal.log");
-    let sst_dir = env_or("RIPTIDE_SST_DIR", "data/sst");
-    let flush_kb: usize = env_or("RIPTIDE_FLUSH_KB", "1024").parse().unwrap_or(1024);
-    let flush_threshold = flush_kb * 1024;
-    let wal_sync: bool = env_or("RIPTIDE_WAL_SYNC", "true").parse().unwrap_or(true);
-    let l0_trigger: usize = env_or("RIPTIDE_L0_TRIGGER", "4").parse().unwrap_or(4);
+    // Load all configuration from environment variables (single source of truth).
+    // See `config::EngineConfig::from_env()` for the full list of supported
+    // variables and their defaults.
+    let cfg = EngineConfig::from_env();
 
-    let mut engine = Engine::new(&wal_path, &sst_dir, flush_threshold, wal_sync)?;
-    engine.set_l0_compaction_trigger(l0_trigger);
+    let flush_kb = cfg.flush_threshold_bytes / 1024;
+    let wal_path_display = cfg.wal_path.display().to_string();
+    let sst_path_display = cfg.sst_dir.display().to_string();
+    let l0_trigger = cfg.l0_compaction_trigger;
+
+    let mut engine = Engine::new(cfg)?;
 
     println!(
         "RiptideKV started (seq={}, wal={}, sst_dir={}, flush={}KiB, l0_trigger={})",
         engine.seq(),
-        wal_path,
-        sst_dir,
+        wal_path_display,
+        sst_path_display,
         flush_kb,
         l0_trigger
     );

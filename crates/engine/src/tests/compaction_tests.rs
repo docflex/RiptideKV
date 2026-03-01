@@ -10,7 +10,7 @@ use tempfile::tempdir;
 #[test]
 fn flush_goes_to_l0() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         64,
@@ -34,7 +34,7 @@ fn flush_goes_to_l0() -> Result<()> {
 #[test]
 fn compact_moves_l0_to_l1() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         64,
@@ -76,7 +76,7 @@ fn compact_moves_l0_to_l1() -> Result<()> {
 #[test]
 fn compact_preserves_newest_value() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         32,
@@ -99,7 +99,7 @@ fn compact_preserves_newest_value() -> Result<()> {
 #[test]
 fn many_keys_with_flushes() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         4096, // 4 KB threshold
@@ -150,7 +150,7 @@ fn many_keys_with_flushes() -> Result<()> {
 #[test]
 fn auto_compaction_triggers_at_l0_threshold() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1, // threshold=1 -> every set triggers a flush
@@ -178,7 +178,8 @@ fn auto_compaction_triggers_at_l0_threshold() -> Result<()> {
 #[test]
 fn auto_compaction_disabled_when_trigger_is_zero() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(dir.path().join("wal.log"), dir.path().join("sst"), 1, false)?;
+    let mut engine =
+        Engine::from_parts(dir.path().join("wal.log"), dir.path().join("sst"), 1, false)?;
     engine.set_l0_compaction_trigger(0);
 
     for i in 0..5u64 {
@@ -197,7 +198,7 @@ fn auto_compaction_disabled_when_trigger_is_zero() -> Result<()> {
 #[test]
 fn tombstone_gc_removes_dead_keys_during_compaction() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         32,
@@ -228,7 +229,7 @@ fn tombstone_gc_removes_dead_keys_during_compaction() -> Result<()> {
 fn compact_reduces_sst_file_count() -> Result<()> {
     let dir = tempdir()?;
     let sst_dir = dir.path().join("sst");
-    let mut engine = Engine::new(dir.path().join("wal.log"), &sst_dir, 64, false)?;
+    let mut engine = Engine::from_parts(dir.path().join("wal.log"), &sst_dir, 64, false)?;
     engine.set_l0_compaction_trigger(0);
 
     for i in 0..50u64 {
@@ -258,7 +259,7 @@ fn compact_reduces_sst_file_count() -> Result<()> {
 #[test]
 fn l0_flush_then_compact_then_more_flushes() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         64,
@@ -311,7 +312,7 @@ fn l0_flush_then_compact_then_more_flushes() -> Result<()> {
 #[test]
 fn compact_preserves_tombstones() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         32,
@@ -335,7 +336,7 @@ fn compact_preserves_tombstones() -> Result<()> {
 #[test]
 fn compact_single_sstable_is_noop() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         64,
@@ -366,7 +367,7 @@ fn compact_then_recovery_works() -> Result<()> {
     let sst = dir.path().join("sst");
 
     {
-        let mut engine = Engine::new(&wal, &sst, 64, false)?;
+        let mut engine = Engine::from_parts(&wal, &sst, 64, false)?;
         engine.set_l0_compaction_trigger(0);
         for i in 0..30u64 {
             engine.set(format!("k{:04}", i).into_bytes(), b"val".to_vec())?;
@@ -379,7 +380,7 @@ fn compact_then_recovery_works() -> Result<()> {
     }
 
     // Reopen engine – should recover from the single compacted SSTable
-    let engine = Engine::new(&wal, &sst, 64, false)?;
+    let engine = Engine::from_parts(&wal, &sst, 64, false)?;
     assert_eq!(engine.sstable_count(), 1);
 
     for i in 0..30u64 {

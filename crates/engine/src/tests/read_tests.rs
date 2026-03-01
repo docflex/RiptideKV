@@ -7,7 +7,7 @@ use tempfile::tempdir;
 #[test]
 fn scan_full_range() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -29,7 +29,7 @@ fn scan_full_range() -> Result<()> {
 #[test]
 fn scan_bounded_range() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -51,7 +51,7 @@ fn scan_bounded_range() -> Result<()> {
 #[test]
 fn scan_across_memtable_and_sstables() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         64,
@@ -77,7 +77,7 @@ fn scan_across_memtable_and_sstables() -> Result<()> {
 #[test]
 fn scan_respects_tombstones() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -99,7 +99,7 @@ fn scan_respects_tombstones() -> Result<()> {
 #[test]
 fn scan_empty_range() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         1024 * 1024,
@@ -119,7 +119,7 @@ fn scan_empty_range() -> Result<()> {
 #[test]
 fn read_path_prefers_l0_over_l1() -> Result<()> {
     let dir = tempdir()?;
-    let mut engine = Engine::new(
+    let mut engine = Engine::from_parts(
         dir.path().join("wal.log"),
         dir.path().join("sst"),
         64,

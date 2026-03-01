@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/bloom",
+    "crates/config",
     "crates/engine",
     "crates/cli",
     "crates/wal",

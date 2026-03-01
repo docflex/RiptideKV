@@ -127,6 +127,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "byteorder",
+ "config",
  "criterion",
  "engine",
  "memtable",
@@ -134,6 +135,10 @@ dependencies = [
  "tempfile",
  "wal",
 ]
+
+[[package]]
+name = "config"
+version = "0.1.0"
 
 [[package]]
 name = "crc32fast"
@@ -222,6 +227,7 @@ name = "engine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "config",
  "memtable",
  "sstable",
  "tempfile",

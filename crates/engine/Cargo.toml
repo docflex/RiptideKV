@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+config = { path = "../config" }
 memtable = { path = "../memtable" }
 sstable = { path = "../sstable" }
 wal = { path = "../wal" }

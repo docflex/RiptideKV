@@ -59,12 +59,15 @@
 //! are written atomically via temp file + rename. The manifest uses the same
 //! atomic write pattern. See [`ARCHITECTURE.md`] for the full crash matrix.
 mod compaction;
+pub mod concurrent;
 mod manifest;
 mod read;
 mod recovery;
 mod write;
 
 use anyhow::Result;
+pub use concurrent::ConcurrentEngine;
+pub use config::EngineConfig;
 use manifest::Manifest;
 use memtable::Memtable;
 pub use recovery::replay_wal_and_build;
@@ -76,13 +79,6 @@ use wal::WalWriter;
 pub const MAX_KEY_SIZE: usize = 64 * 1024;
 /// Maximum allowed value size in bytes (10 MiB).
 pub const MAX_VALUE_SIZE: usize = 10 * 1024 * 1024;
-
-/// Default number of L0 SSTables that triggers automatic compaction.
-///
-/// When the L0 count reaches this threshold after a flush, the engine
-/// automatically runs compaction to merge L0 + L1 into a single L1 SSTable.
-/// Set to `0` to disable auto-compaction.
-pub const DEFAULT_L0_COMPACTION_TRIGGER: usize = 4;
 
 /// The central storage engine orchestrating Memtable, WAL, and SSTables.
 ///
@@ -152,15 +148,12 @@ impl std::fmt::Debug for Engine {
 }
 
 impl Engine {
-    /// Creates a new engine, performing full recovery from the WAL and existing
-    /// SSTable files.
+    /// Creates a new engine from an [`EngineConfig`], performing full recovery
+    /// from the WAL and existing SSTable files.
     ///
     /// # Arguments
     ///
-    /// * `wal_path` — path to the write-ahead log file.
-    /// * `sst_dir` — directory where SSTable files are stored.
-    /// * `flush_threshold` — memtable byte-size threshold that triggers flush.
-    /// * `wal_sync` — if `true`, every WAL append calls `fsync`.
+    /// * `cfg` — unified configuration struct containing all engine parameters.
     ///
     /// # Recovery Steps
     ///
@@ -170,14 +163,12 @@ impl Engine {
     /// 4. Open the WAL writer in append mode.
     /// 5. Load SSTables from the manifest (or scan directory for legacy DBs).
     /// 6. Determine the highest sequence number across WAL and SSTables.
-    pub fn new<P1: AsRef<Path>, P2: AsRef<Path>>(
-        wal_path: P1,
-        sst_dir: P2,
-        flush_threshold: usize,
-        wal_sync: bool,
-    ) -> Result<Self> {
-        let wal_path = wal_path.as_ref().to_path_buf();
-        let sst_dir = sst_dir.as_ref().to_path_buf();
+    pub fn new(cfg: EngineConfig) -> Result<Self> {
+        let wal_path = cfg.wal_path;
+        let sst_dir = cfg.sst_dir;
+        let flush_threshold = cfg.flush_threshold_bytes;
+        let wal_sync = cfg.wal_sync;
+        let l0_compaction_trigger = cfg.l0_compaction_trigger;
 
         // ensure sst dir exists
         std::fs::create_dir_all(&sst_dir)?;
@@ -263,9 +254,38 @@ impl Engine {
             manifest,
             seq,
             flush_threshold,
-            l0_compaction_trigger: DEFAULT_L0_COMPACTION_TRIGGER,
+            l0_compaction_trigger,
             wal_sync,
         })
+    }
+
+    /// Convenience constructor that accepts individual parameters instead of
+    /// an [`EngineConfig`].
+    ///
+    /// This is equivalent to building an `EngineConfig` and calling
+    /// [`Engine::new`]. Primarily useful in tests where constructing a full
+    /// config struct is verbose.
+    ///
+    /// # Arguments
+    ///
+    /// * `wal_path` – path to the write-ahead log file.
+    /// * `sst_dir` – directory where SSTable files are stored.
+    /// * `flush_threshold` – memtable byte-size threshold that triggers flush.
+    /// * `wal_sync` – if `true`, every WAL append calls `fsync`.
+    pub fn from_parts<P1: AsRef<Path>, P2: AsRef<Path>>(
+        wal_path: P1,
+        sst_dir: P2,
+        flush_threshold: usize,
+        wal_sync: bool,
+    ) -> Result<Self> {
+        let cfg = EngineConfig::builder()
+            .wal_path(wal_path.as_ref())
+            .sst_dir(sst_dir.as_ref())
+            .flush_threshold_bytes(flush_threshold)
+            .wal_sync(wal_sync)
+            .build();
+
+        Self::new(cfg)
     }
 
     /// Returns the current monotonic sequence number.
