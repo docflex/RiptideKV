@@ -182,7 +182,8 @@ impl SSTableReader {
 
         let seq = f.read_u64::<LittleEndian>()?;
         let present = f.read_u8()?;
-        let (value, val_bytes) = if present == 1 {
+        // let (value, val_bytes) = if present == 1 {
+        let value = if present == 1 {
             let val_len = f.read_u32::<LittleEndian>()? as usize;
             if val_len > MAX_VALUE_BYTES {
                 bail!(
@@ -193,9 +194,9 @@ impl SSTableReader {
             }
             let mut val = vec![0u8; val_len];
             f.read_exact(&mut val)?;
-            (Some(val.clone()), Some(val))
+            Some(val.clone())
         } else {
-            (None, None)
+            None
         };
 
         // Verify CRC32 for v3 SSTables.
@@ -206,9 +207,9 @@ impl SSTableReader {
             hasher.update(&key_buf);
             hasher.update(&seq.to_le_bytes());
             hasher.update(&[present]);
-            if let Some(ref vb) = val_bytes {
-                hasher.update(&(vb.len() as u32).to_le_bytes());
-                hasher.update(vb);
+            if let Some(ref v) = value {
+                hasher.update(&(v.len() as u32).to_le_bytes());
+                hasher.update(v);
             }
             let actual_crc = hasher.finalize();
             if actual_crc != expected_crc {

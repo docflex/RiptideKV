@@ -55,7 +55,7 @@ impl Engine {
 
         let mut merge = MergeIterator::new(&all_sstables);
 
-        // Stram directly from MergeIterator -> SSTableWriter without
+        // Stream directly from MergeIterator -> SSTableWriter without
         // materializing the entire dataset in RAM. Memory usage is bounded
         // by the bloom filter + index, not the data volume.
         let ts = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
@@ -64,9 +64,9 @@ impl Engine {
 
         // Tombstone GC: since this is a full compaction (all L0 + L1 -> single
         // L1), there are no older SSTables that could contain shadowed values.
-        // Tombstones are therefore safe to drop — they have no older data to
-        // shadow. Also check if the memtable contains the key: if so, the
-        // tombstone must be preserved to shadow the memtable entry on recovery.
+        // Tombstones are therefore safe to drop — unless the memtable still
+        // references the key, in which case we can keep the tombstone so it
+        // continues to shadow the memtable's entry after a subsequent flush.
         //
         // Build a streaming iterator adapter from MergeIterator.
         // MergeIterator::next() returns Result<Option<...>>, so we collect
@@ -80,7 +80,7 @@ impl Engine {
                         // Drop tombstones unless the memtable still references
                         // this key (the memtable is not part of compaction, so
                         // we must keep tombstones that shadow memtable data).
-                        if entry.value.is_none() && mem_ref.contains_key(&key) {
+                        if entry.value.is_none() && !mem_ref.contains_key(&key) {
                             continue; // GC this tombstone
                         }
                         return Some((key, entry));
