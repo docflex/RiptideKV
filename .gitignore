@@ -2,3 +2,4 @@
 wal.log
 /data
 .DS_Store
+.env

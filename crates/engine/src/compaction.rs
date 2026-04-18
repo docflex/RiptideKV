@@ -62,27 +62,25 @@ impl Engine {
         let sst_name = format!("sst-{:020}-{}.sst", self.seq, ts);
         let sst_path = self.sst_dir.join(&sst_name);
 
-        // Tombstone GC: since this is a full compaction (all L0 + L1 -> single
-        // L1), there are no older SSTables that could contain shadowed values.
-        // Tombstones are therefore safe to drop — they have no older data to
-        // shadow. Also check if the memtable contains the key: if so, the
-        // tombstone must be preserved to shadow the memtable entry on recovery.
-        //
-        // Build a streaming iterator adapter from MergeIterator.
-        // MergeIterator::next() returns Result<Option<...>>, so we collect
-        // into a fallible iterator that stops on error or exhaustion.
         let mem_ref = &self.mem;
         let mut merge_error: Option<anyhow::Error> = None;
+        let mut wrote_any = false;
         let streaming_iter = std::iter::from_fn(|| {
             loop {
                 match merge.next_entry() {
                     Ok(Some((key, entry))) => {
-                        // Drop tombstones unless the memtable still references
-                        // this key (the memtable is not part of compaction, so
-                        // we must keep tombstones that shadow memtable data).
-                        if entry.value.is_none() && mem_ref.contains_key(&key) {
-                            continue; // GC this tombstone
+                        // GC tombstones during full compaction: since all L0 + L1
+                        // are merged into a single L1, there are no older SSTables
+                        // left. A tombstone with no memtable reference has nothing
+                        // to shadow and is safe to discard. If the memtable does
+                        // reference this key the WAL will replay it on recovery,
+                        // so GC is still safe — but we keep the tombstone to avoid
+                        // a live value from the memtable surfacing in L1 after the
+                        // next flush+compaction cycle.
+                        if entry.value.is_none() && !mem_ref.contains_key(&key) {
+                            continue; // GC: dead tombstone, nothing to shadow
                         }
+                        wrote_any = true;
                         return Some((key, entry));
                     }
                     Ok(None) => return None,
@@ -97,26 +95,26 @@ impl Engine {
         let write_result =
             SSTableWriter::write_from_iterator(&sst_path, estimated_count, streaming_iter);
 
-        // Check for merge errors first, then write errors.
+        // Check for merge errors first (iterator failed mid-stream).
         if let Some(e) = merge_error {
-            // Clean up partial write if any.
             let _ = std::fs::remove_file(sst_path.with_extension("sst.tmp"));
             return Err(e);
         }
 
-        // Handle the case where all SSTables were empty.
-        if let Err(e) = write_result {
-            if e.to_string().contains("empty") {
-                drop(all_sstables);
-                for p in &old_paths {
-                    let _ = std::fs::remove_file(p);
-                }
-                self.manifest.entries.clear();
-                self.manifest.save()?;
-                return Ok(());
+        // If every entry was GC'd (all tombstones, no live data), the writer
+        // returns an "empty" error. Detect this via `wrote_any` rather than
+        // inspecting the error message string.
+        if !wrote_any {
+            drop(all_sstables);
+            for p in &old_paths {
+                let _ = std::fs::remove_file(p);
             }
-            return Err(e);
+            self.manifest.entries.clear();
+            self.manifest.save()?;
+            return Ok(());
         }
+
+        write_result?;
 
         // Update the manifest atomically: replace all entries with the
         // single compacted L1 SSTable.

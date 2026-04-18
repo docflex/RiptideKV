@@ -1,17 +1,33 @@
 # RiptideKV
 
-**RiptideKV** is a learning project to build a **Log-Structured Merge (LSM) key-value store** in Rust.
-The goal is to understand storage engine internals by implementing them incrementally and correctly, not to ship a production database.
+**RiptideKV** is a learning project that builds a **Log-Structured Merge (LSM) key-value store** in Rust — and exposes it as a **Redis-compatible TCP server**. The goal is to understand storage engine internals by implementing them incrementally and correctly.
 
 ```
-  Client ──► CLI ──► Engine ──┬── Memtable  (in-memory sorted buffer)
-                              ├── WAL       (crash-safe append-only log)
-                              └── SSTables  (immutable on-disk sorted files)
-                                    └── Bloom Filters (fast negative lookups)
+  redis-cli / Jedis / redis-py
+          │  TCP  (RESP2)
+          ▼
+  ┌──────────────────────────────────┐
+  │  crates/server  (Tokio async)    │
+  │  RESP2 parser · 55+ commands     │
+  └───────────────┬──────────────────┘
+                  │  engine API
+                  ▼
+  ┌──────────────────────────────────┐
+  │  crates/engine  (LSM tree)       │
+  │  Memtable · WAL · SSTables       │
+  │  Bloom Filters · Compaction      │
+  └──────────────────────────────────┘
 ```
 
-> **For the full architecture with ASCII diagrams, data flow, and per-crate
-> deep dives, see [`ARCHITECTURE.md`](ARCHITECTURE.md).**
+---
+
+## Documentation
+
+| Document | What it covers |
+|----------|----------------|
+| **[docs/HOWTORUN.md](docs/HOWTORUN.md)** | Build, run CLI, run server, connect clients (redis-cli / Java / Python), benchmarks, troubleshooting |
+| **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | Write/read/recovery data flows, file formats, RESP2 server design, concurrency model, trade-offs |
+| **[docs/GUIDE.md](docs/GUIDE.md)** | Learning guide — WAL, Memtable, SSTables, Bloom Filters, Compaction, RESP2, Tokio, with pitfalls |
 
 ---
 
@@ -21,41 +37,100 @@ The goal is to understand storage engine internals by implementing them incremen
 # Build everything
 cargo build --workspace
 
-# Run the interactive CLI
+# ── Option A: Interactive CLI (no network)
 cargo run -p cli
 
-# Run all 161 tests
+# ── Option B: RESP2 TCP Server (Redis-compatible)
+cargo run -p server --bin riptidekv-server
+# → RiptideKV listening on 0.0.0.0:6379
+
+# Connect with redis-cli (in another terminal)
+redis-cli PING          # PONG
+redis-cli SET foo bar   # OK
+redis-cli GET foo       # "bar"
+
+# Run all Rust tests (245)
 cargo test --workspace
 
+# Run all Java tests (150)
+mvn test -f java/pom.xml
+
 # Run benchmarks
-cargo bench -p cli
+cargo bench -p cli      # engine-level benchmarks
+cargo bench -p server   # TCP server benchmarks
 ```
 
-### CLI Usage
+---
 
+## Embedding in a Java / Maven project
+
+The `riptidekv-server` JAR bundles the native server binary for all supported
+platforms.  Your code starts the server as a subprocess and connects to it
+with any Redis client.
+
+### Add the dependency
+
+```xml
+<!-- 1. GitHub Packages repository (requires a GitHub PAT with read:packages) -->
+<repositories>
+  <repository>
+    <id>github</id>
+    <url>https://maven.pkg.github.com/YOUR_GITHUB_USERNAME/RiptideKV</url>
+  </repository>
+</repositories>
+
+<!-- 2. Dependency -->
+<dependency>
+  <groupId>io.github.YOUR_GITHUB_USERNAME</groupId>
+  <artifactId>riptidekv-server</artifactId>
+  <version>1.0.0</version>
+</dependency>
 ```
-RiptideKV started (seq=0, wal=wal.log, sst_dir=data/sst, flush=1024KiB, l0_trigger=4)
-Commands: SET key value | GET key | DEL key | SCAN [start] [end]
-          COMPACT | FLUSH | STATS | EXIT
-> SET name Alice
-OK
-> GET name
-Alice
-> DEL name
-OK
-> GET name
-(nil)
+
+> **GitHub Packages authentication** — add to `~/.m2/settings.xml`:
+> ```xml
+> <server>
+>   <id>github</id>
+>   <username>YOUR_GITHUB_USERNAME</username>
+>   <password>YOUR_GITHUB_PAT</password>   <!-- PAT with read:packages -->
+> </server>
+> ```
+
+### Start the embedded server
+
+```java
+import io.riptidekv.RiptideKVConfig;
+import io.riptidekv.RiptideKVServer;
+import redis.clients.jedis.Jedis;
+import java.nio.file.Paths;
+
+RiptideKVConfig config = RiptideKVConfig.builder()
+    .bind("127.0.0.1:6379")
+    .dataDir(Paths.get("/var/lib/myapp/rkv"))  // WAL + SSTables stored here
+    .flushKb(4096)                              // flush at 4 MiB
+    .walSync(true)                              // durable writes
+    .build();
+
+try (RiptideKVServer server = new RiptideKVServer(config)) {
+    server.start();  // extracts binary, starts process, blocks until ready
+
+    try (Jedis jedis = new Jedis("127.0.0.1", server.getPort())) {
+        jedis.set("hello", "world");
+        System.out.println(jedis.get("hello")); // world
+
+        jedis.setex("session:abc", 3600, "user_data");
+        System.out.println(jedis.ttl("session:abc")); // ~3600
+    }
+} // server.close() sends SIGTERM, flushes memtable, exits cleanly
 ```
 
-### Configuration (Environment Variables)
+### Supported platforms
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `RIPTIDE_WAL_PATH` | `wal.log` | WAL file path |
-| `RIPTIDE_SST_DIR` | `data/sst` | SSTable directory |
-| `RIPTIDE_FLUSH_KB` | `1024` | Flush threshold in KiB (1024 = 1 MiB) |
-| `RIPTIDE_WAL_SYNC` | `true` | fsync every WAL append |
-| `RIPTIDE_L0_TRIGGER` | `4` | Auto-compaction trigger (0 = disabled) |
+| Platform | Architecture |
+|----------|-------------|
+| Linux | x86_64, aarch64 |
+| macOS | x86_64 (Intel), aarch64 (Apple Silicon) |
+| Windows | x86_64 |
 
 ---
 
@@ -63,29 +138,70 @@ OK
 
 ```
 RiptideKV/
-├── ARCHITECTURE.md          # Detailed architecture documentation
-├── Cargo.toml               # Workspace root
+├── ARCHITECTURE.md          # Legacy architecture overview (see docs/ for full version)
+├── Cargo.toml               # Workspace root (resolver = "2")
+├── docs/
+│   ├── ARCHITECTURE.md      # Full system design — data flows, file formats, trade-offs
+│   ├── GUIDE.md             # Linear learning guide — concepts, code refs, pitfalls
+│   └── HOWTORUN.md          # Build, CLI, server, clients, benchmarks, troubleshooting
+├── java/                    # Maven module — Java embedding library
+│   ├── pom.xml              #   Published to GitHub Packages as riptidekv-server
+│   └── src/
+│       ├── main/java/io/riptidekv/
+│       │   ├── RiptideKVConfig.java   # Fluent config builder (bind, dataDir, flushKb, walSync)
+│       │   └── RiptideKVServer.java   # Extracts native binary + manages server subprocess
+│       └── test/java/io/riptidekv/
+│           ├── RespClient.java        # Minimal RESP2 client for tests
+│           ├── RiptideKVConfigTest.java   # 20 config unit tests
+│           ├── RiptideKVServerTest.java   # 14 lifecycle tests
+│           └── RespCommandsTest.java      # 147 end-to-end command tests
 └── crates/
-    ├── bloom/               # Probabilistic set membership (17 tests)
-    ├── memtable/            # In-memory sorted write buffer (43 tests)
-    ├── wal/                 # Write-Ahead Log for durability (22 tests)
-    ├── sstable/             # Immutable on-disk sorted tables (21 tests)
-    │   ├── reader.rs        #   Read + bloom check + CRC verify
-    │   ├── writer.rs        #   Atomic write (tmp + rename)
-    │   ├── merge.rs         #   Min-heap merge iterator
-    │   └── format.rs        #   Magic numbers, footer sizes
-    ├── engine/              # Storage engine orchestrator (55 tests)
-    │   ├── lib.rs           #   Engine struct, constructor, accessors
-    │   ├── write.rs         #   set(), del(), flush()
-    │   ├── read.rs          #   get(), scan()
-    │   ├── compaction.rs    #   compact(), tombstone GC
-    │   ├── recovery.rs      #   WAL replay, SSTable loading
-    │   ├── manifest.rs      #   Persistent L0/L1 level tracking
-    │   └── tests/           #   Split into 4 focused test modules
-    └── cli/                 #   Interactive REPL + benchmarks
+    ├── bloom/               # Bloom filter  (17 tests)
+    │   └── src/lib.rs       #   BloomFilter, FNV-1a double-hashing, serialization
+    ├── memtable/            # In-memory sorted write buffer  (43 tests)
+    │   └── src/lib.rs       #   Memtable (BTreeMap), sequence-gated writes, tombstones
+    ├── wal/                 # Write-Ahead Log  (22 tests)
+    │   └── src/lib.rs       #   WalWriter, WalReader, CRC32 per record
+    ├── sstable/             # Immutable on-disk sorted tables  (21 tests)
+    │   └── src/
+    │       ├── format.rs    #   v1/v2/v3 footer layout, magic numbers
+    │       ├── writer.rs    #   Atomic write (tmp → fsync → rename)
+    │       ├── reader.rs    #   Bloom-filtered point lookup + CRC32 verify
+    │       └── merge.rs     #   MergeIterator (min-heap k-way merge)
+    ├── engine/              # Storage engine orchestrator  (55 tests)
+    │   └── src/
+    │       ├── lib.rs       #   Engine struct, constructor, public accessors
+    │       ├── write.rs     #   set(), del(), flush(), auto-compaction trigger
+    │       ├── read.rs      #   get(), scan()
+    │       ├── compaction.rs#   compact(), tombstone GC
+    │       ├── recovery.rs  #   WAL replay, SSTable loading, tmp cleanup
+    │       └── manifest.rs  #   Persistent L0/L1 level tracking (atomic writes)
+    ├── server/              # Async RESP2 TCP server  (84 integration tests)
+    │   ├── src/
+    │   │   ├── lib.rs       #   serve() — public library API (testable without subprocess)
+    │   │   ├── main.rs      #   Binary entry point — env-var config + graceful shutdown
+    │   │   ├── resp.rs      #   RESP2 parser (non-recursive) + response serializer
+    │   │   ├── db.rs        #   SharedDb: Arc<RwLock<Engine>> + volatile TTL map
+    │   │   └── handler.rs   #   55+ command dispatcher, per-connection state
+    │   ├── benches/
+    │   │   └── server_bench.rs  # Criterion: PING, SET, GET, pipeline, MSET throughput
+    │   └── tests/
+    │       └── integration.rs   # 84 end-to-end tests over real TCP sockets
+    └── cli/                 # Interactive REPL + engine-level benchmarks
+        ├── src/main.rs      #   SET/GET/DEL/SCAN/COMPACT/FLUSH/STATS REPL
+        ├── benches/         #   Criterion: memtable, sstable, wal, engine benchmarks
+        └── tests/           #   CLI integration tests
 ```
 
-**Dependency graph**: `cli → engine → {memtable, wal, sstable → bloom}`
+**Dependency graph** (arrows = "depends on"):
+
+```
+cli ──────────────────────────────────────► engine
+server ───────────────────────────────────► engine
+engine ──► memtable
+engine ──► wal
+engine ──► sstable ──► bloom
+```
 
 ---
 
@@ -93,42 +209,49 @@ RiptideKV/
 
 ### Write Path
 
-1. Increment monotonic sequence number
-2. Append record to WAL (durability)
-3. Insert into Memtable (fast reads)
-4. If Memtable exceeds threshold → flush to SSTable, truncate WAL
+```
+Client SET k v
+  │
+  ├─ 1. seq += 1
+  ├─ 2. WAL.append(Put{seq, k, v})   — durable on disk
+  ├─ 3. memtable.put(k, v, seq)      — fast in-memory
+  └─ 4. if memtable.size >= threshold:
+           flush to SSTable → truncate WAL → maybe compact
+```
 
 ### Read Path
 
-1. Check **Memtable** (freshest data)
-2. Check **L0 SSTables** newest-first (bloom filter → index → disk read)
-3. Check **L1 SSTables** newest-first
-4. First match wins; tombstones shadow older values
+```
+Client GET k
+  │
+  ├─ 1. memtable.get(k)           — newest, no disk I/O
+  ├─ 2. L0 SSTables, newest first — bloom → index → disk read
+  └─ 3. L1 SSTable                — bloom → index → disk read
+         First hit (value or tombstone) wins.
+```
 
-### Compaction
+### Recovery (on startup)
 
-Merges all L0 + L1 SSTables into a single L1 SSTable using a streaming
-min-heap merge. Tombstones for keys with no older references are garbage
-collected. Auto-triggers when L0 count reaches the configured threshold.
-
-### Recovery
-
-On startup: replay WAL → rebuild Memtable, load MANIFEST → assign SSTables
-to L0/L1, recover sequence number from v3 footer (`max_seq`).
+```
+cleanup .sst.tmp → replay WAL → load Manifest → open SSTables → ready
+```
 
 ---
 
-## Goals
+## Supported Commands (Server)
 
-- Learn Rust fundamentals in a systems programming context
-- Incrementally build an LSM-style storage engine
-- Practice testing, CI, and clean architecture
+```
+Connection:   PING  ECHO  SELECT  QUIT  HELLO  CLIENT  INFO  CONFIG  COMMAND
+Database:     DBSIZE  FLUSHDB  FLUSHALL  ACL  SLOWLOG  MEMORY  WAIT
+Strings:      GET  SET  SETNX  SETEX  PSETEX  GETSET  GETDEL  GETEX
+              MGET  MSET  MSETNX  APPEND  STRLEN
+              INCR  INCRBY  INCRBYFLOAT  DECR  DECRBY  GETRANGE  SETRANGE
+Keys:         DEL  UNLINK  EXISTS  TYPE  RENAME  RENAMENX  RANDOMKEY  TOUCH
+              EXPIRE  PEXPIRE  EXPIREAT  PEXPIREAT  TTL  PTTL  PERSIST
+              EXPIRETIME  PEXPIRETIME  KEYS  SCAN
+```
 
-## Non-Goals (for now)
-
-- Production-grade performance
-- Distributed systems or consensus
-- Concurrent read/write (currently single-threaded `&mut self`)
+---
 
 ## Glossary
 
@@ -139,68 +262,43 @@ to L0/L1, recover sequence number from v3 footer (`max_seq`).
 | **SSTable** | Sorted String Table; immutable on-disk sorted key-value file |
 | **WAL** | Write-Ahead Log; append-only file for crash recovery |
 | **Compaction** | Merging SSTables to remove duplicates and reclaim space |
-| **Tombstone** | Marker indicating a key has been deleted |
+| **Tombstone** | A deletion marker — shadows older values in SSTables |
 | **Bloom Filter** | Probabilistic structure for fast "definitely not in set" checks |
-| **L0** | Level 0; SSTables from memtable flushes (may overlap) |
-| **L1** | Level 1; SSTables from compaction (non-overlapping) |
+| **L0** | Level 0; SSTables from memtable flushes (may key-overlap) |
+| **L1** | Level 1; single post-compaction SSTable (non-overlapping) |
 | **Manifest** | Text file tracking which SSTable belongs to which level |
+| **RESP2** | Redis Serialization Protocol v2 — the Redis wire format |
 
 ---
 
 ## Development Phases
 
-### Phase 0 — Rust fundamentals & repository setup [DELIVERED]
+| Phase | Status | Description |
+|-------|--------|-------------|
+| 0 | ✅ | Rust workspace, CI, clippy, rustfmt |
+| 1 | ✅ | Memtable, WAL (CRC32), SSTable v1, CLI (SET/GET/DEL) |
+| 2 | ✅ | Read path (Memtable→L0→L1), Bloom filters, Compaction |
+| 3 | ✅ | SSTable v3 (CRC32 per record, max_seq), Manifest, streaming compaction, range scan, auto-compaction, tombstone GC |
+| 4 | ✅ | RESP2 TCP server (Tokio), 55+ commands, TTL, Java/Python client compatibility, 84 integration tests |
+| 5 | 📋 | Persistent TTL, tiered compaction, LRU block cache, compression, metrics |
 
-- Cargo workspace, CI (GitHub Actions), clippy, rustfmt
-- Rust fundamentals: ownership, borrowing, traits, `Result`/`Option`
+---
 
-### Phase 1 — Core LSM (in-memory + basic on-disk) [DELIVERED]
+## Known Limitations
 
-- Ordered memtable with sequence-gated writes
-- WAL with CRC32 per record, crash-safe replay
-- SSTable v1 writer/reader with sparse index
-- CLI with SET, GET, DEL
+RiptideKV is a learning project. The following are known differences from production Redis:
 
-#### Write Path Demonstrations
-
-| Demo | Description |
-|------|-------------|
-| ![Memtable → WAL](public/assets/memtable_wal.gif) | Writing to Memtable, then WAL |
-| ![Flush to SSTable](public/assets/flush_to_sstable.gif) | Threshold exceeded → SSTable created → WAL flushed |
-| ![New Memtable](public/assets/new_memtable_after_flush.gif) | New writes after flush |
-| ![Delete](public/assets/delete_propagation.gif) | Deletions propagated via tombstones |
-
-### Phase 2 — Reads, bloom filters, and compaction [DELIVERED]
-
-- Read path: Memtable → L0 → L1 with bloom filter short-circuit
-- Per-SSTable bloom filters (1% FPR, FNV-1a double hashing)
-- Basic compaction: merge multiple SSTables, drop obsolete keys
-- SSTable v2: bloom filter section in file layout
-
-### Phase 3 — Robustness and production readiness [DELIVERED]
-
-- **SSTable v3**: per-record CRC32 checksums, `max_seq` in footer
-- **Manifest**: persistent L0/L1 tracking with atomic writes
-- **Streaming compaction**: `write_from_iterator()` — bounded RAM usage
-- **Range scan**: `Engine::scan(start, end)` merging all sources
-- **Auto-compaction**: triggers when L0 count >= configurable threshold
-- **Tombstone GC**: drops dead tombstones during full compaction
-- **Graceful shutdown**: `Drop` impl flushes memtable, `force_flush()` API
-- **CLI improvements**: env-var config, SCAN/COMPACT/FLUSH/STATS commands
-- **SRP refactor**: engine split into 5 focused modules + 4 test modules
-- **161 tests**, zero warnings
-
-### Phase 4 — RESP server & Java compatibility (planned)
-
-- RESP2 protocol server (GET, SET, DEL, PING, INFO)
-- Async networking with Tokio
-- Integration tests with Java Redis client (Jedis)
-
-### Phase 5 — Performance, features, and polish (planned)
-
-- Benchmarks and tuning (criterion)
-- Optional: TTL, leveled compaction, compression, LRU block cache
-- Structured logging (`tracing`), metrics, fuzzing
+| Area | Behaviour | Note |
+|------|-----------|------|
+| **TTL persistence** | TTLs are stored in memory only — lost on server restart | Keys survive but their expiry times do not; planned in Phase 5 |
+| **INCR on non-numeric** | Treats un-parseable values as `0` instead of returning an error | Intentional graceful degradation; differs from Redis |
+| **Authentication** | No `AUTH` command — any client can connect | Bind to loopback (`127.0.0.1`) in production |
+| **TLS** | Plaintext TCP only | Terminate TLS at a proxy (nginx, HAProxy) if needed |
+| **Replication** | Single node only — no leader/follower | `WAIT` always returns 0 |
+| **Compaction** | Only L0 → L1; L1 grows unboundedly | Tiered/levelled compaction planned in Phase 5 |
+| **Block cache** | Every SSTable read goes to disk | LRU block cache planned in Phase 5 |
+| **Linux aarch64** | Not in CI build matrix — binary is optional | Add cross-compilation to CI matrix to enable |
+| **RESP3** | Not supported — returns `NOPROTO` error | Use RESP2 clients |
 
 ---
 
@@ -213,7 +311,17 @@ to L0/L1, recover sequence number from v3 footer (`max_seq`).
 | `wal` | 22 | Append, replay, CRC, truncated tails, corruption |
 | `sstable` | 21 | Write, read, bloom, merge iterator, v1/v2/v3 compat |
 | `engine` | 55 | CRUD, flush, recovery, compaction, scan, manifest, GC |
+| `server` | 84 | All 55+ commands, TTL expiry, concurrent clients, pipelining, binary values |
 | doctests | 3 | Usage examples for bloom, memtable, wal |
-| **Total** | **161** | |
+| **Total (Rust)** | **245** | |
 
-CI: `cargo fmt --check` + `cargo clippy` + `cargo test --workspace`
+**Java embedding library** (`mvn test -f java/pom.xml`):
+
+| Test class | Tests | Coverage |
+|---|---|---|
+| `RiptideKVConfigTest` | 20 | Builder defaults, validation (null, blank, no colon, non-numeric port, out-of-range), port extraction, fluency |
+| `RiptideKVServerTest` | 14 | start, stop, isRunning, close idempotency, port release, null config guard |
+| `RespCommandsTest` | 116 | All 55+ commands over real TCP: Connection, Database, Strings, Keys, real-time expiry, pipelining, concurrent clients, binary safety |
+| **Total (Java)** | **150** | |
+
+CI: `cargo fmt --check` + `cargo clippy` + `cargo test --workspace` (245) + `mvn test -f java/pom.xml` (150)

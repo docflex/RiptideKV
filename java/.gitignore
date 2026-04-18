@@ -1,0 +1,6 @@
+# Maven build output
+target/
+
+# Native binaries are injected by CI (publish-maven.yml) at release time.
+# They are large binary files and must NOT be committed to git.
+src/main/resources/native/

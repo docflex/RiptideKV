@@ -1,7 +1,19 @@
 # RiptideKV — Architecture
 
-This document describes the complete internal architecture of RiptideKV, a
-**Log-Structured Merge (LSM) tree** key-value store written in Rust.
+> **This file is superseded.**  
+> The full, up-to-date architecture reference (covering all phases including
+> the RESP2 server) is at **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+
+---
+
+The content below is an older Phase 3 snapshot retained for reference.
+For anything current, please read `docs/ARCHITECTURE.md`.
+
+---
+
+This document describes the internal architecture of RiptideKV up to Phase 3
+(storage engine only — no RESP server). See `docs/ARCHITECTURE.md` for the
+complete picture including Phase 4 (Tokio server, RESP2, SharedDb, TTL).
 
 ---
 

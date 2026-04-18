@@ -115,7 +115,7 @@ impl Engine {
                 if !end.is_empty() && key_ref >= end {
                     continue;
                 }
-                if let Ok(Some(entry)) = sst.get(key_ref) {
+                if let Some(entry) = sst.get(key_ref)? {
                     merge_entry(key_ref.to_vec(), entry);
                 }
             }
@@ -130,7 +130,7 @@ impl Engine {
                 if !end.is_empty() && key_ref >= end {
                     continue;
                 }
-                if let Ok(Some(entry)) = sst.get(key_ref) {
+                if let Some(entry) = sst.get(key_ref)? {
                     merge_entry(key_ref.to_vec(), entry);
                 }
             }

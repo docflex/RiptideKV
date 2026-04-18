@@ -100,11 +100,7 @@ impl WalWriter {
     /// * `path` - file system path for the WAL (created if it does not exist).
     /// * `sync` - if true, every `append` call is followed by `fsync`.
     pub fn create<P: AsRef<Path>>(path: P, sync: bool) -> Result<Self, WalError> {
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .read(true)
-            .open(path)?;
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
         Ok(Self {
             file,
             sync,

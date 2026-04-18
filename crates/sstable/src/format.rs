@@ -24,7 +24,7 @@
 //! then seeking back to read the appropriate footer size.
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use std::io::{Read, Result as IoResult, Seek, SeekFrom, Write};
+use std::io::{self, Read, Result as IoResult, Seek, SeekFrom, Write};
 
 /// Magic number identifying SSTable v1 files (ASCII "SST1") Can be Removed Later.
 pub const SSTABLE_MAGIC_V1: u32 = 0x5353_5431;
@@ -253,5 +253,3 @@ pub fn read_footer<R: Read + Seek>(r: &mut R) -> IoResult<(u64, u32)> {
     let magic = r.read_u32::<LittleEndian>()?;
     Ok((index_offset, magic))
 }
-
-use std::io;
