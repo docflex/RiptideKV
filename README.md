@@ -75,13 +75,13 @@ with any Redis client.
 <repositories>
   <repository>
     <id>github</id>
-    <url>https://maven.pkg.github.com/YOUR_GITHUB_USERNAME/RiptideKV</url>
+    <url>https://maven.pkg.github.com/docflex/RiptideKV</url>
   </repository>
 </repositories>
 
 <!-- 2. Dependency -->
 <dependency>
-  <groupId>io.github.YOUR_GITHUB_USERNAME</groupId>
+  <groupId>io.github.docflex</groupId>
   <artifactId>riptidekv-server</artifactId>
   <version>1.0.0</version>
 </dependency>
@@ -91,7 +91,7 @@ with any Redis client.
 > ```xml
 > <server>
 >   <id>github</id>
->   <username>YOUR_GITHUB_USERNAME</username>
+>   <username>docflex</username>
 >   <password>YOUR_GITHUB_PAT</password>   <!-- PAT with read:packages -->
 > </server>
 > ```
