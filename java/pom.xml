@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!--
+    ┌─────────────────────────────────────────────────────────────────────────┐
+    │  IMPORTANT: Replace YOUR_GITHUB_USERNAME with your actual GitHub        │
+    │  username in:                                                           │
+    │    • <groupId>                                                          │
+    │    • <url> (project URL)                                                │
+    │    • <distributionManagement> URL                                       │
+    │    • <scm> URLs                                                         │
+    └─────────────────────────────────────────────────────────────────────────┘
+  -->
+
+  <groupId>io.github.YOUR_GITHUB_USERNAME</groupId>
+  <artifactId>riptidekv-server</artifactId>
+  <!-- Version is overridden by the publish-maven.yml CI workflow at release time -->
+  <version>0.0.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <name>RiptideKV Server</name>
+  <description>
+    Embedded RiptideKV RESP2 key-value server. Bundles native binaries for
+    Linux x86_64/aarch64, macOS x86_64/aarch64, and Windows x86_64.
+    RiptideKVServer extracts the right binary at runtime and starts it as a
+    subprocess so any Redis client (Jedis, lettuce, redis-py, go-redis) can
+    connect to it immediately.
+  </description>
+  <url>https://github.com/YOUR_GITHUB_USERNAME/RiptideKV</url>
+
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/licenses/MIT</url>
+    </license>
+  </licenses>
+
+  <scm>
+    <connection>scm:git:git://github.com/YOUR_GITHUB_USERNAME/RiptideKV.git</connection>
+    <developerConnection>scm:git:ssh://github.com/YOUR_GITHUB_USERNAME/RiptideKV.git</developerConnection>
+    <url>https://github.com/YOUR_GITHUB_USERNAME/RiptideKV</url>
+  </scm>
+
+  <properties>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <!-- ── GitHub Packages repository ──────────────────────────────────────── -->
+  <!-- The CI workflow uses GITHUB_TOKEN + setup-java's settings.xml injection -->
+  <distributionManagement>
+    <repository>
+      <id>github</id>
+      <name>GitHub Packages</name>
+      <url>https://maven.pkg.github.com/YOUR_GITHUB_USERNAME/RiptideKV</url>
+    </repository>
+  </distributionManagement>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.11.4</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Produce a -sources JAR (required for GitHub Packages) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+        <version>3.3.1</version>
+        <executions>
+          <execution>
+            <id>attach-sources</id>
+            <goals><goal>jar-no-fork</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Explicit jar plugin config — ensure native/ resources are included -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.1</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+            </manifest>
+            <manifestEntries>
+              <RiptideKV-Version>${project.version}</RiptideKV-Version>
+            </manifestEntries>
+          </archive>
+        </configuration>
+      </plugin>
+
+      <!-- JUnit 5 test runner -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+      </plugin>
+
+      <!-- versions:set is used by CI to stamp the release version -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>versions-maven-plugin</artifactId>
+        <version>2.17.1</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

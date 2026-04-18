@@ -182,7 +182,6 @@ impl SSTableReader {
 
         let seq = f.read_u64::<LittleEndian>()?;
         let present = f.read_u8()?;
-        // let (value, val_bytes) = if present == 1 {
         let value = if present == 1 {
             let val_len = f.read_u32::<LittleEndian>()? as usize;
             if val_len > MAX_VALUE_BYTES {
@@ -194,7 +193,7 @@ impl SSTableReader {
             }
             let mut val = vec![0u8; val_len];
             f.read_exact(&mut val)?;
-            Some(val.clone())
+            Some(val)
         } else {
             None
         };

@@ -24,8 +24,7 @@
 //! then seeking back to read the appropriate footer size.
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use std::io;
-use std::io::{Read, Result as IoResult, Seek, SeekFrom, Write};
+use std::io::{self, Read, Result as IoResult, Seek, SeekFrom, Write};
 
 /// Magic number identifying SSTable v1 files (ASCII "SST1") Can be Removed Later.
 pub const SSTABLE_MAGIC_V1: u32 = 0x5353_5431;

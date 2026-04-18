@@ -135,11 +135,14 @@ impl Engine {
         self.manifest.save()?;
 
         // Successfully wrote SSTable and manifest; now safely truncate the WAL.
-        let _f = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(&self.wal_path)?;
+        {
+            let f = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&self.wal_path)?;
+            f.sync_all()?;
+        }
 
         // create a fresh WalWriter (append mode)
         self.wal_writer = WalWriter::create(&self.wal_path, self.wal_sync)?;

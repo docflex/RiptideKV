@@ -170,7 +170,11 @@ impl Manifest {
             let level_str = match entry.level {
                 0 => "L0",
                 1 => "L1",
-                other => panic!("invalid level {}", other),
+                other => anyhow::bail!(
+                    "invalid manifest level {} for file '{}'",
+                    other,
+                    entry.filename
+                ),
             };
             writeln!(f, "{}:{}", level_str, entry.filename)?;
         }
