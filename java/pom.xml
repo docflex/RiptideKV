@@ -5,18 +5,7 @@
                              https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <!--
-    ┌─────────────────────────────────────────────────────────────────────────┐
-    │  IMPORTANT: Replace YOUR_GITHUB_USERNAME with your actual GitHub        │
-    │  username in:                                                           │
-    │    • <groupId>                                                          │
-    │    • <url> (project URL)                                                │
-    │    • <distributionManagement> URL                                       │
-    │    • <scm> URLs                                                         │
-    └─────────────────────────────────────────────────────────────────────────┘
-  -->
-
-  <groupId>io.github.YOUR_GITHUB_USERNAME</groupId>
+  <groupId>io.github.docflex</groupId>
   <artifactId>riptidekv-server</artifactId>
   <!-- Version is overridden by the publish-maven.yml CI workflow at release time -->
   <version>0.0.0-SNAPSHOT</version>
@@ -30,7 +19,7 @@
     subprocess so any Redis client (Jedis, lettuce, redis-py, go-redis) can
     connect to it immediately.
   </description>
-  <url>https://github.com/YOUR_GITHUB_USERNAME/RiptideKV</url>
+  <url>https://github.com/docflex/RiptideKV</url>
 
   <licenses>
     <license>
@@ -40,9 +29,9 @@
   </licenses>
 
   <scm>
-    <connection>scm:git:git://github.com/YOUR_GITHUB_USERNAME/RiptideKV.git</connection>
-    <developerConnection>scm:git:ssh://github.com/YOUR_GITHUB_USERNAME/RiptideKV.git</developerConnection>
-    <url>https://github.com/YOUR_GITHUB_USERNAME/RiptideKV</url>
+    <connection>scm:git:git://github.com/docflex/RiptideKV.git</connection>
+    <developerConnection>scm:git:ssh://github.com/docflex/RiptideKV.git</developerConnection>
+    <url>https://github.com/docflex/RiptideKV</url>
   </scm>
 
   <properties>
@@ -57,7 +46,7 @@
     <repository>
       <id>github</id>
       <name>GitHub Packages</name>
-      <url>https://maven.pkg.github.com/YOUR_GITHUB_USERNAME/RiptideKV</url>
+      <url>https://maven.pkg.github.com/docflex/RiptideKV</url>
     </repository>
   </distributionManagement>
 
