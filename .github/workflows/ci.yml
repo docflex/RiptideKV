@@ -87,16 +87,19 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} -p cli
+      - name: Build release binaries
+        run: |
+          cargo build --release --target ${{ matrix.target }} -p cli
+          cargo build --release --target ${{ matrix.target }} -p server --bin riptidekv-server
 
       - name: Package artifact (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
           mkdir -p staging
           cp target/${{ matrix.target }}/release/cli staging/riptidekv
-          chmod +x staging/riptidekv
-          tar czf ${{ matrix.artifact }}.tar.gz -C staging riptidekv
+          cp target/${{ matrix.target }}/release/riptidekv-server staging/riptidekv-server
+          chmod +x staging/riptidekv staging/riptidekv-server
+          tar czf ${{ matrix.artifact }}.tar.gz -C staging riptidekv riptidekv-server
 
       - name: Package artifact (Windows)
         if: runner.os == 'Windows'
@@ -104,7 +107,8 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force staging
           Copy-Item "target/${{ matrix.target }}/release/cli.exe" "staging/riptidekv.exe"
-          Compress-Archive -Path "staging/riptidekv.exe" -DestinationPath "${{ matrix.artifact }}.zip"
+          Copy-Item "target/${{ matrix.target }}/release/riptidekv-server.exe" "staging/riptidekv-server.exe"
+          Compress-Archive -Path "staging/riptidekv.exe","staging/riptidekv-server.exe" -DestinationPath "${{ matrix.artifact }}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -166,11 +170,17 @@ jobs:
   #-----------------------------------------------------------
   release:
     name: Release
-    if: startsWith(github.ref, 'refs/tags/v') || needs.tag.outputs.new_tag != ''
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      (needs.tag.result == 'success' || needs.tag.result == 'skipped') &&
+      (startsWith(github.ref, 'refs/tags/v') || needs.tag.outputs.new_tag != '')
     needs: [build, tag]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      tag_name: ${{ steps.tag_name.outputs.tag_name }}
     steps:
       - name: Determine Tag Name
         id: tag_name
@@ -192,4 +202,19 @@ jobs:
           files: |
             artifacts/**/*.tar.gz
             artifacts/**/*.zip
+
+  #-----------------------------------------------------------
+  # 5. Publish Java JAR to GitHub Packages
+  #    Called directly — GITHUB_TOKEN-created releases never
+  #    fire on:release events in sibling workflows.
+  #-----------------------------------------------------------
+  publish_java:
+    name: Publish Java to GitHub Packages
+    needs: [release]
+    if: needs.release.result == 'success'
+    uses: ./.github/workflows/publish-maven.yml
+    with:
+      tag: ${{ needs.release.outputs.tag_name }}
+    secrets:
+      MAVEN_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

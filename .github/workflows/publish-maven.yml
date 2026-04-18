@@ -1,0 +1,171 @@
+name: Publish Maven Package
+
+# Publishes io.github.docflex:riptidekv-server to GitHub Packages.
+#
+# Trigger options:
+#   1. Automatically when a GitHub Release is published (tag-based release from ci.yml).
+#   2. Manually via "Run workflow" with an explicit tag, useful for re-publishing.
+#
+# The workflow downloads the platform-specific riptidekv-server binaries that
+# were attached to the Release by ci.yml, bundles them into the JAR under
+# src/main/resources/native/<os>-<arch>/, and deploys with Maven.
+#
+# Consumers add to pom.xml:
+#
+#   <repositories>
+#     <repository>
+#       <id>github</id>
+#       <url>https://maven.pkg.github.com/docflex/RiptideKV</url>
+#     </repository>
+#   </repositories>
+#   <dependency>
+#     <groupId>io.github.docflex</groupId>
+#     <artifactId>riptidekv-server</artifactId>
+#     <version>1.0.0</version>
+#   </dependency>
+
+on:
+  # NOTE: on:release is intentionally NOT the primary trigger.
+  # GitHub suppresses release events fired by GITHUB_TOKEN, so publish-maven.yml
+  # would never run automatically. ci.yml calls this workflow directly via
+  # workflow_call after the release job completes.
+  release:
+    types: [published]
+
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag whose binaries to bundle (e.g. v1.2.3)'
+        required: true
+
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag whose binaries to bundle'
+        required: true
+        type: string
+    secrets:
+      MAVEN_TOKEN:
+        required: true
+
+concurrency:
+  group: publish-maven-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Bundle binaries & publish JAR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read   # read release assets
+      packages: write  # publish to GitHub Packages
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Java + Maven setup ──────────────────────────────────────────────────
+      # setup-java generates a ~/.m2/settings.xml that injects GITHUB_TOKEN as
+      # the password for the server-id "github" — matching the pom.xml.
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          server-id: github
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
+
+      # ── Determine which release tag to publish ──────────────────────────────
+      - name: Resolve release tag
+        id: tag
+        run: |
+          # inputs.tag is set by both workflow_dispatch and workflow_call
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── Download release binaries ───────────────────────────────────────────
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          echo "Downloading assets for release $TAG"
+          gh release download "$TAG" --dir release-assets --repo "$GITHUB_REPOSITORY"
+          echo "Assets:"
+          ls -lh release-assets/
+
+      # ── Extract riptidekv-server binaries into Maven resource tree ──────────
+      # The JAR layout:  native/<os>-<arch>/riptidekv-server[.exe]
+      # RiptideKVServer.java looks up: /native/<os>-<arch>/riptidekv-server[.exe]
+      - name: Arrange native binaries
+        run: |
+          RES=java/src/main/resources/native
+
+          # ─ Linux x86_64 ────────────────────────────────────────────────────
+          mkdir -p "$RES/linux-x86_64"
+          tar -xzf release-assets/riptidekv-linux-x86_64.tar.gz \
+              -C "$RES/linux-x86_64" riptidekv-server
+          chmod +x "$RES/linux-x86_64/riptidekv-server"
+
+          # ─ macOS x86_64 ────────────────────────────────────────────────────
+          mkdir -p "$RES/macos-x86_64"
+          tar -xzf release-assets/riptidekv-macos-x86_64.tar.gz \
+              -C "$RES/macos-x86_64" riptidekv-server
+          chmod +x "$RES/macos-x86_64/riptidekv-server"
+
+          # ─ macOS aarch64 (Apple Silicon) ────────────────────────────────────
+          mkdir -p "$RES/macos-aarch64"
+          tar -xzf release-assets/riptidekv-macos-aarch64.tar.gz \
+              -C "$RES/macos-aarch64" riptidekv-server
+          chmod +x "$RES/macos-aarch64/riptidekv-server"
+
+          # ─ Windows x86_64 ──────────────────────────────────────────────────
+          mkdir -p "$RES/windows-x86_64"
+          unzip -p release-assets/riptidekv-windows-x86_64.zip \
+              riptidekv-server.exe > "$RES/windows-x86_64/riptidekv-server.exe"
+
+          # ─ Linux aarch64 (optional — present only if the build matrix included it) ─
+          if [ -f release-assets/riptidekv-linux-aarch64.tar.gz ]; then
+            mkdir -p "$RES/linux-aarch64"
+            tar -xzf release-assets/riptidekv-linux-aarch64.tar.gz \
+                -C "$RES/linux-aarch64" riptidekv-server
+            chmod +x "$RES/linux-aarch64/riptidekv-server"
+          fi
+
+          echo "Resource tree:"
+          find "$RES" -type f | sort
+
+      # ── Set JAR version from tag (strip leading 'v') ────────────────────────
+      - name: Set Maven version from tag
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          VERSION="${TAG#v}"
+          echo "Setting version to $VERSION"
+          mvn --batch-mode versions:set \
+              -DnewVersion="$VERSION" \
+              -DgenerateBackupPoms=false \
+              -f java/pom.xml
+
+      # ── Build + Deploy ──────────────────────────────────────────────────────
+      - name: Build and publish to GitHub Packages
+        run: |
+          mvn --batch-mode deploy \
+              -f java/pom.xml \
+              -DskipTests \
+              -DaltDeploymentRepository=github::https://maven.pkg.github.com/${{ github.repository }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.MAVEN_TOKEN || secrets.GITHUB_TOKEN }}
+
+      # ── Attach the JAR to the GitHub Release as well ────────────────────────
+      - name: Upload JAR to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          VERSION="${TAG#v}"
+          JAR="java/target/riptidekv-server-${VERSION}.jar"
+          gh release upload "$TAG" "$JAR" \
+              --clobber \
+              --repo "$GITHUB_REPOSITORY"
