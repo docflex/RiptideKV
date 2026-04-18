@@ -57,7 +57,7 @@ jobs:
     name: Bundle binaries & publish JAR
     runs-on: ubuntu-latest
     permissions:
-      contents: read   # read release assets
+      contents: write   # read release assets + upload jar to release
       packages: write  # publish to GitHub Packages
 
     steps:
